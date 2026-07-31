@@ -101,8 +101,9 @@ export CC="${PACK_ROOT}/bin/clang"
 export CXX="${PACK_ROOT}/bin/clang++"
 export AR="${PACK_ROOT}/bin/llvm-ar"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib"
-# Prefer lld when the driver supports it.
-export LDFLAGS="${LDFLAGS:-} -fuse-ld=lld"
+# Do not force -fuse-ld=lld: official LLVM lld may need libxml2.so.2, which
+# newer distros renamed. System ld.bfd/gold works with this clang. Opt in with:
+#   export LDFLAGS="-fuse-ld=lld"
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -140,7 +141,7 @@ export PATH="${STAGE}/bin:${PATH}"
 "${STAGE}/bin/clang" --version | head -1
 "${STAGE}/bin/ninja" --version
 echo 'int main(){return 0;}' >"${STAGE}/.smoke.c"
-"${STAGE}/bin/clang" "${STAGE}/.smoke.c" -o "${STAGE}/.smoke" -fuse-ld=lld
+"${STAGE}/bin/clang" "${STAGE}/.smoke.c" -o "${STAGE}/.smoke"
 "${STAGE}/.smoke"
 rm -f "${STAGE}/.smoke" "${STAGE}/.smoke.c"
 
