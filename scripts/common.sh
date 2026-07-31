@@ -49,17 +49,17 @@ stage_cmake_from_archive() {
   tmp="$(mktemp -d)"
   case "$platform" in
     linux)
-      tar -xzf "$archive" -C "$tmp"
+      tar --no-same-owner -xzf "$archive" -C "$tmp"
       local prefix
       prefix="$(find "$tmp" -maxdepth 1 -type d -name 'cmake-*' | head -1)"
+      [[ -n "$prefix" ]] || { echo "cmake prefix missing in $archive" >&2; exit 1; }
       cp -a "${prefix}/bin/cmake" "${stage}/bin/cmake"
-      # Keep cmake's private libs/modules next to bin via relative layout.
+      # Keep cmake modules next to bin (../share relative to bin/cmake).
       mkdir -p "${stage}/share"
-      cp -a "${prefix}/share/cmake-"* "${stage}/share/" 2>/dev/null || \
+      if compgen -G "${prefix}/share/cmake-*" >/dev/null; then
+        cp -a "${prefix}/share/cmake-"* "${stage}/share/"
+      else
         cp -a "${prefix}/share/." "${stage}/share/"
-      if [[ -d "${prefix}/bin" ]]; then
-        # cpack/ctest optional — skip to save space
-        true
       fi
       ;;
     windows)
@@ -67,6 +67,7 @@ stage_cmake_from_archive() {
       unzip -q "$archive" -d "$tmp"
       local prefix
       prefix="$(find "$tmp" -maxdepth 1 -type d -name 'cmake-*' | head -1)"
+      [[ -n "$prefix" ]] || { echo "cmake prefix missing in $archive" >&2; exit 1; }
       cp -a "${prefix}/bin/cmake.exe" "${stage}/bin/cmake.exe"
       mkdir -p "${stage}/share"
       cp -a "${prefix}/share/." "${stage}/share/"
@@ -74,11 +75,16 @@ stage_cmake_from_archive() {
       find "${prefix}/bin" -maxdepth 1 -name '*.dll' -exec cp -a {} "${stage}/bin/" \;
       ;;
     macos)
-      tar -xzf "$archive" -C "$tmp"
+      # Kitware archives ship Apple UIDs; ignore ownership on Linux CI.
+      tar --no-same-owner -xzf "$archive" -C "$tmp" || \
+        tar --no-same-owner -xzf "$archive" -C "$tmp" --warning=no-unknown-keyword || true
       # Official layout: cmake-*-macos-universal/CMake.app/Contents/...
       local cmake_bin
       cmake_bin="$(find "$tmp" -type f -path '*/bin/cmake' | head -1)"
-      [[ -n "$cmake_bin" ]] || { echo "cmake binary missing in $archive" >&2; exit 1; }
+      [[ -n "$cmake_bin" && -x "$cmake_bin" ]] || {
+        echo "cmake binary missing in $archive" >&2
+        exit 1
+      }
       local contents
       contents="$(cd "$(dirname "$cmake_bin")/.." && pwd)"
       cp -a "${contents}/bin/cmake" "${stage}/bin/cmake"
@@ -112,8 +118,10 @@ stage_ninja() {
 make_zip() {
   local stage="$1" zip_path="$2"
   need zip
-  rm -f "$zip_path"
   mkdir -p "$(dirname "$zip_path")"
-  ( cd "$stage" && zip -qr "$zip_path" . )
-  echo "Wrote $zip_path ($(du -h "$zip_path" | awk '{print $1}'))"
+  rm -f "$zip_path"
+  local abs_zip
+  abs_zip="$(cd "$(dirname "$zip_path")" && pwd)/$(basename "$zip_path")"
+  ( cd "$stage" && zip -qr "$abs_zip" . )
+  echo "Wrote $abs_zip ($(du -h "$abs_zip" | awk '{print $1}'))"
 }
