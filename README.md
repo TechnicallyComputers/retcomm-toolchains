@@ -53,6 +53,10 @@ Point title `build.toolchain` at this repo:
 }
 ```
 
+Linux packs include `lld` but `env.sh` does **not** force `-fuse-ld=lld`
+(official LLVM lld may need `libxml2.so.2`). The system linker is the default;
+opt in with `LDFLAGS=-fuse-ld=lld` if your host has a compatible libxml2.
+
 ## License / redistribution
 
 This repository’s scripts are MIT. Packaged binaries are redistributed under
