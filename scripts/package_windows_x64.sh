@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Assemble cmake-clang-v1-windows-x64.zip (llvm-mingw UCRT + cmake + ninja).
+# Can run on Linux (download + zip) — does not execute Windows binaries.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/common.sh"
+
+need curl
+need unzip
+need zip
+
+OUT="${1:-$OUT_DEFAULT}"
+OS_TAG="windows-x64"
+STAGE="${OUT}/stage-${PACK_ID}-${OS_TAG}"
+ZIP="${OUT}/${PACK_ID}-${OS_TAG}.zip"
+
+CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-windows-x86_64.zip"
+NINJA_URL="https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-win.zip"
+MINGW_URL="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_TAG}/${LLVM_MINGW_ASSET}"
+
+CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-windows-x86_64.zip"
+NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-win.zip"
+MINGW_ARC="${CACHE}/${LLVM_MINGW_ASSET}"
+
+download "$CMAKE_URL" "$CMAKE_ARC"
+download "$NINJA_URL" "$NINJA_ARC"
+download "$MINGW_URL" "$MINGW_ARC"
+
+rm -rf "$STAGE"
+mkdir -p "${STAGE}/bin" "${OUT}"
+
+MINGW_TMP="$(mktemp -d)"
+echo "extracting llvm-mingw…"
+unzip -q "$MINGW_ARC" -d "$MINGW_TMP"
+MINGW_ROOT="$(find "$MINGW_TMP" -maxdepth 1 -type d -name 'llvm-mingw-*' | head -1)"
+[[ -n "$MINGW_ROOT" && -d "${MINGW_ROOT}/bin" ]] || {
+  echo "llvm-mingw layout unexpected" >&2
+  exit 1
+}
+
+# Flatten llvm-mingw to pack root (bin/include/lib/…).
+cp -a "${MINGW_ROOT}/." "${STAGE}/"
+rm -rf "$MINGW_TMP"
+
+stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" windows
+stage_ninja "$NINJA_ARC" "$STAGE" ninja.exe
+
+cat >"${STAGE}/env.bat" <<'EOF'
+@echo off
+set "PACK_ROOT=%~dp0"
+set "PACK_ROOT=%PACK_ROOT:~0,-1%"
+set "PATH=%PACK_ROOT%\bin;%PATH%"
+set "CC=%PACK_ROOT%\bin\clang.exe"
+set "CXX=%PACK_ROOT%\bin\clang++.exe"
+set "AR=%PACK_ROOT%\bin\llvm-ar.exe"
+set "RANLIB=%PACK_ROOT%\bin\llvm-ranlib.exe"
+EOF
+
+cat >"${STAGE}/env.sh" <<'EOF'
+#!/usr/bin/env bash
+# For Git Bash / MSYS. Prefer env.bat from cmd.exe.
+PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="${PACK_ROOT}/bin:${PATH}"
+export CC="${PACK_ROOT}/bin/clang.exe"
+export CXX="${PACK_ROOT}/bin/clang++.exe"
+export AR="${PACK_ROOT}/bin/llvm-ar.exe"
+export RANLIB="${PACK_ROOT}/bin/llvm-ranlib.exe"
+EOF
+chmod +x "${STAGE}/env.sh"
+
+cat >"${STAGE}/README.md" <<EOF
+# ${PACK_ID} (${OS_TAG})
+
+Self-contained Windows toolchain for RetComM / psxrecomp local builds:
+
+- llvm-mingw ${LLVM_MINGW_TAG} (LLVM/Clang/LLD + mingw-w64 **UCRT** sysroot)
+- CMake ${CMAKE_VERSION}
+- Ninja ${NINJA_VERSION}
+
+No Visual Studio install required. Targets Windows 10+ (UCRT).
+
+## Use
+
+\`\`\`bat
+call env.bat
+cmake --version
+clang --version
+\`\`\`
+
+RetComM prepends \`bin\\\` to \`PATH\` when this pack is cached.
+
+Pack version: ${PACK_VERSION}
+
+Upstream: https://github.com/mstorsjo/llvm-mingw
+EOF
+
+write_meta "$STAGE" "$OS_TAG" "llvm-mingw-ucrt"
+
+# Structure checks (cannot exec PE on Linux CI without wine).
+[[ -f "${STAGE}/bin/clang.exe" ]]
+[[ -f "${STAGE}/bin/clang++.exe" ]]
+[[ -f "${STAGE}/bin/cmake.exe" ]]
+[[ -f "${STAGE}/bin/ninja.exe" ]]
+[[ -f "${STAGE}/bin/x86_64-w64-mingw32-clang.exe" ]] || \
+  [[ -f "${STAGE}/bin/clang.exe" ]]
+
+make_zip "$STAGE" "$ZIP"

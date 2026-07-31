@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Assemble cmake-clang-v1-macos-*.zip (cmake + ninja; system Apple clang / Xcode CLT).
+# $1 = os tag: macos-arm64 | macos-x64 | macos-universal
+# $2 = optional out dir
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/common.sh"
+
+need curl
+need tar
+need unzip
+need zip
+
+OS_TAG="${1:-macos-universal}"
+OUT="${2:-$OUT_DEFAULT}"
+STAGE="${OUT}/stage-${PACK_ID}-${OS_TAG}"
+ZIP="${OUT}/${PACK_ID}-${OS_TAG}.zip"
+
+CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-macos-universal.tar.gz"
+NINJA_URL="https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-mac.zip"
+
+CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-macos-universal.tar.gz"
+NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-mac.zip"
+
+download "$CMAKE_URL" "$CMAKE_ARC"
+download "$NINJA_URL" "$NINJA_ARC"
+
+rm -rf "$STAGE"
+mkdir -p "${STAGE}/bin" "${OUT}"
+
+stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" macos
+stage_ninja "$NINJA_ARC" "$STAGE" ninja
+
+cat >"${STAGE}/env.sh" <<'EOF'
+#!/usr/bin/env bash
+PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="${PACK_ROOT}/bin:${PATH}"
+# Prefer Xcode CLT / Xcode clang — required for Apple SDK headers & link.
+if [[ -x /usr/bin/clang ]]; then
+  export CC="${CC:-/usr/bin/clang}"
+  export CXX="${CXX:-/usr/bin/clang++}"
+fi
+EOF
+chmod +x "${STAGE}/env.sh"
+
+cat >"${STAGE}/README.md" <<EOF
+# ${PACK_ID} (${OS_TAG})
+
+macOS RetComM toolchain helpers:
+
+- CMake ${CMAKE_VERSION} (universal)
+- Ninja ${NINJA_VERSION}
+
+**Apple Clang + Xcode Command Line Tools are required** (system SDK). This pack
+does not bundle a compiler — same approach as GitHub \`macos-*\` runners.
+
+## Install CLT (if needed)
+
+\`\`\`bash
+xcode-select -p >/dev/null 2>&1 || xcode-select --install
+clang --version
+\`\`\`
+
+## Use
+
+\`\`\`bash
+. ./env.sh
+cmake --version
+ninja --version
+\`\`\`
+
+Pack version: ${PACK_VERSION}
+EOF
+
+write_meta "$STAGE" "$OS_TAG" "cmake-ninja-system-clang"
+
+[[ -x "${STAGE}/bin/cmake" ]]
+[[ -x "${STAGE}/bin/ninja" ]]
+
+make_zip "$STAGE" "$ZIP"

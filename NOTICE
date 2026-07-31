@@ -1,0 +1,22 @@
+retcomm-toolchains redistributes the following third-party components in
+release zip assets (not in this git tree):
+
+### LLVM / Clang / LLD
+Copyright (c) LLVM project contributors
+Apache License v2.0 with LLVM Exceptions
+https://github.com/llvm/llvm-project
+
+### llvm-mingw (Windows packs)
+Copyright (c) Martin Storsjö and contributors
+ assembles LLVM + mingw-w64; see upstream licenses
+https://github.com/mstorsjo/llvm-mingw
+
+### CMake
+Copyright (c) Kitware, Inc. and Contributors
+BSD 3-Clause
+https://github.com/Kitware/CMake
+
+### Ninja
+Copyright (c) Google Inc. and others
+Apache License 2.0
+https://github.com/ninja-build/ninja

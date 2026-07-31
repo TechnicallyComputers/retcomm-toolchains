@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Assemble cmake-clang-v1-linux-x64.zip (portable clang/lld + cmake + ninja).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/common.sh"
+
+need curl
+need tar
+need zip
+need file
+
+OUT="${1:-$OUT_DEFAULT}"
+OS_TAG="linux-x64"
+STAGE="${OUT}/stage-${PACK_ID}-${OS_TAG}"
+ZIP="${OUT}/${PACK_ID}-${OS_TAG}.zip"
+
+CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+NINJA_URL="https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip"
+LLVM_URL="https://github.com/llvm/llvm-project/releases/download/${LLVM_TAG}/${LLVM_LINUX_ASSET}"
+
+CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-linux.zip"
+LLVM_ARC="${CACHE}/${LLVM_LINUX_ASSET}"
+
+download "$CMAKE_URL" "$CMAKE_ARC"
+download "$NINJA_URL" "$NINJA_ARC"
+download "$LLVM_URL" "$LLVM_ARC"
+
+rm -rf "$STAGE"
+mkdir -p "${STAGE}/bin" "${OUT}"
+
+# --- LLVM (pruned) ---
+LLVM_TMP="$(mktemp -d)"
+echo "extracting LLVM (lean subset)…"
+# First pass: discover the versioned clang-N binary name from the archive index.
+CLANG_REAL="$(tar -tf "$LLVM_ARC" | grep -E '/bin/clang-[0-9]+$' | head -1 || true)"
+CLANG_REAL="${CLANG_REAL##*/}"
+[[ -n "$CLANG_REAL" ]] || CLANG_REAL="clang-22"
+
+tar --no-same-owner -xJf "$LLVM_ARC" -C "$LLVM_TMP" \
+  --wildcards \
+  "*/bin/clang" \
+  "*/bin/clang++" \
+  "*/bin/${CLANG_REAL}" \
+  "*/bin/clang-cpp" \
+  "*/bin/lld" \
+  "*/bin/ld.lld" \
+  "*/bin/llvm-ar" \
+  "*/bin/llvm-ranlib" \
+  "*/bin/llvm-nm" \
+  "*/bin/llvm-objcopy" \
+  "*/bin/llvm-strip" \
+  "*/lib/clang" \
+  || true
+
+LLVM_ROOT="$(find "$LLVM_TMP" -maxdepth 1 -type d -name 'LLVM-*' | head -1)"
+[[ -n "$LLVM_ROOT" && -e "${LLVM_ROOT}/bin/clang" ]] || {
+  echo "failed to extract clang from $LLVM_ARC" >&2
+  exit 1
+}
+
+# Drop sanitizer / coverage runtimes (keep builtins + includes).
+find "${LLVM_ROOT}/lib/clang" -type f \( \
+  -name '*asan*' -o -name '*tsan*' -o -name '*hwasan*' -o -name '*ubsan*' \
+  -o -name '*fuzzer*' -o -name '*xray*' -o -name '*memprof*' -o -name '*rtsan*' \
+  -o -name '*nsan*' -o -name '*dfsan*' -o -name '*safestack*' -o -name '*gwp*' \
+  -o -name '*profile*' -o -name '*cfi*' -o -name '*scudo*' -o -name '*msan*' \
+  \) -delete 2>/dev/null || true
+find "${LLVM_ROOT}/lib/clang" -type d -empty -delete 2>/dev/null || true
+
+# Keep only the compiler driver bits we need in bin/.
+keep_bins=(clang clang++ clang-cpp lld ld.lld llvm-ar llvm-ranlib llvm-nm llvm-objcopy llvm-strip)
+# Preserve versioned clang-N real binary if clang is a symlink.
+if [[ -L "${LLVM_ROOT}/bin/clang" ]]; then
+  keep_bins+=("$(readlink "${LLVM_ROOT}/bin/clang")")
+fi
+
+mkdir -p "${STAGE}/lib"
+cp -a "${LLVM_ROOT}/lib/clang" "${STAGE}/lib/"
+for b in "${keep_bins[@]}"; do
+  [[ -e "${LLVM_ROOT}/bin/${b}" ]] || continue
+  cp -a "${LLVM_ROOT}/bin/${b}" "${STAGE}/bin/"
+done
+# Convenience aliases
+ln -sf clang "${STAGE}/bin/cc"
+ln -sf clang++ "${STAGE}/bin/c++"
+chmod +x "${STAGE}/bin/"* 2>/dev/null || true
+rm -rf "$LLVM_TMP"
+
+stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
+stage_ninja "$NINJA_ARC" "$STAGE" ninja
+
+cat >"${STAGE}/env.sh" <<'EOF'
+#!/usr/bin/env bash
+# Source:  . ./env.sh
+PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="${PACK_ROOT}/bin:${PATH}"
+export CC="${PACK_ROOT}/bin/clang"
+export CXX="${PACK_ROOT}/bin/clang++"
+export AR="${PACK_ROOT}/bin/llvm-ar"
+export RANLIB="${PACK_ROOT}/bin/llvm-ranlib"
+# Prefer lld when the driver supports it.
+export LDFLAGS="${LDFLAGS:-} -fuse-ld=lld"
+EOF
+chmod +x "${STAGE}/env.sh"
+
+cat >"${STAGE}/README.md" <<EOF
+# ${PACK_ID} (${OS_TAG})
+
+Portable RetComM / psxrecomp toolchain pack:
+
+- LLVM/Clang ${LLVM_VERSION} + lld (pruned official Linux-X64 build)
+- CMake ${CMAKE_VERSION}
+- Ninja ${NINJA_VERSION}
+
+## Use
+
+\`\`\`bash
+. ./env.sh
+cmake --version
+clang --version
+\`\`\`
+
+RetComM prepends \`bin/\` to \`PATH\` automatically when this pack is installed
+under its toolchain cache.
+
+Uses the host glibc / libstdc++ (typical for Linux portable clang). Requires a
+reasonably modern x86_64 glibc (Ubuntu 22.04+ / similar).
+
+Pack version: ${PACK_VERSION}
+EOF
+
+write_meta "$STAGE" "$OS_TAG" "llvm-clang-lld"
+
+# Smoke
+export PATH="${STAGE}/bin:${PATH}"
+"${STAGE}/bin/cmake" --version | head -1
+"${STAGE}/bin/clang" --version | head -1
+"${STAGE}/bin/ninja" --version
+echo 'int main(){return 0;}' >"${STAGE}/.smoke.c"
+"${STAGE}/bin/clang" "${STAGE}/.smoke.c" -o "${STAGE}/.smoke" -fuse-ld=lld
+"${STAGE}/.smoke"
+rm -f "${STAGE}/.smoke" "${STAGE}/.smoke.c"
+
+make_zip "$STAGE" "$ZIP"

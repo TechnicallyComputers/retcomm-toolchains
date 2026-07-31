@@ -1,0 +1,7 @@
+.cache/
+dist/
+*.zip
+*.tar.gz
+*.tar.xz
+*.partial
+.DS_Store
