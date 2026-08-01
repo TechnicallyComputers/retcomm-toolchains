@@ -3,9 +3,11 @@
 Shared, fetch-on-demand toolchain packs for [RetComM](https://github.com/TechnicallyComputers/RetComM-Launcher)
 and standalone recomp setup hosts (psxrecomp / snesrecomp).
 
-Game release zips **do not** embed these packs. RetComM downloads them into
-`~/.local/share/retcomm/toolchains/<id>/<tag>/` (override: `RETCOMM_TOOLCHAIN_DIR`)
-and reuses them across titles.
+Game release zips (e.g. BPE) **may embed** these packs under `toolchain/` so
+standalone Generate & rebuild works offline. RetComM prefers harvesting that
+tree into `~/.local/share/retcomm/toolchains/<id>/<tag>/` (shared across titles,
+then pruned from the game tree). Override: `RETCOMM_TOOLCHAIN_DIR`. Catalog
+`build.toolchain` download remains a fallback for older zips.
 
 ## Pack id: `cmake-clang-v1`
 
