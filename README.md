@@ -14,14 +14,16 @@ then pruned from the game tree). Override: `RETCOMM_TOOLCHAIN_DIR`. Catalog
 | Asset | Contents |
 |-------|----------|
 | `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, CMake, Ninja |
-| `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja |
+| `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + static zlib |
 | `cmake-clang-v1-macos-universal.zip` | CMake + Ninja; **requires Xcode CLT** (system clang) |
 
 Layout (RetComM contract):
 
 ```
 bin/cmake  bin/ninja  bin/clang …   # compilers vary by OS
-env.sh                              # Windows also has env.bat
+include/ zlib.h zconf.h             # Windows: static zlib for find_package(ZLIB)
+lib/libz.a
+env.sh                              # Windows also has env.bat (sets ZLIB_ROOT)
 retcomm-toolchain.json
 README.md
 ```

@@ -20,3 +20,8 @@ https://github.com/Kitware/CMake
 Copyright (c) Google Inc. and others
 Apache License 2.0
 https://github.com/ninja-build/ninja
+
+### zlib (Windows packs)
+Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler
+zlib License
+https://github.com/madler/zlib

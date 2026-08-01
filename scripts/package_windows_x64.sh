@@ -46,6 +46,7 @@ rm -rf "$MINGW_TMP"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" windows
 stage_ninja "$NINJA_ARC" "$STAGE" ninja.exe
+stage_zlib_mingw_windows "$STAGE"
 
 cat >"${STAGE}/env.bat" <<'EOF'
 @echo off
@@ -56,6 +57,12 @@ set "CC=%PACK_ROOT%\bin\clang.exe"
 set "CXX=%PACK_ROOT%\bin\clang++.exe"
 set "AR=%PACK_ROOT%\bin\llvm-ar.exe"
 set "RANLIB=%PACK_ROOT%\bin\llvm-ranlib.exe"
+set "ZLIB_ROOT=%PACK_ROOT%"
+if defined CMAKE_PREFIX_PATH (
+  set "CMAKE_PREFIX_PATH=%PACK_ROOT%;%CMAKE_PREFIX_PATH%"
+) else (
+  set "CMAKE_PREFIX_PATH=%PACK_ROOT%"
+)
 EOF
 
 cat >"${STAGE}/env.sh" <<'EOF'
@@ -67,6 +74,12 @@ export CC="${PACK_ROOT}/bin/clang.exe"
 export CXX="${PACK_ROOT}/bin/clang++.exe"
 export AR="${PACK_ROOT}/bin/llvm-ar.exe"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib.exe"
+export ZLIB_ROOT="${PACK_ROOT}"
+if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
+  export CMAKE_PREFIX_PATH="${PACK_ROOT}:${CMAKE_PREFIX_PATH}"
+else
+  export CMAKE_PREFIX_PATH="${PACK_ROOT}"
+fi
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -78,6 +91,7 @@ Self-contained Windows toolchain for RetComM / psxrecomp local builds:
 - llvm-mingw ${LLVM_MINGW_TAG} (LLVM/Clang/LLD + mingw-w64 **UCRT** sysroot)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
+- zlib ${ZLIB_VERSION} (static \`libz.a\` + headers for \`find_package(ZLIB)\`)
 
 No Visual Studio install required. Targets Windows 10+ (UCRT).
 
@@ -89,7 +103,8 @@ cmake --version
 clang --version
 \`\`\`
 
-RetComM prepends \`bin\\\` to \`PATH\` when this pack is cached.
+\`env.bat\` / \`env.sh\` prepend \`bin\\\` to \`PATH\` and set \`CMAKE_PREFIX_PATH\` /
+\`ZLIB_ROOT\` to the pack root so CMake finds zlib.
 
 Pack version: ${PACK_VERSION}
 
@@ -105,5 +120,8 @@ write_meta "$STAGE" "$OS_TAG" "llvm-mingw-ucrt"
 [[ -f "${STAGE}/bin/ninja.exe" ]]
 [[ -f "${STAGE}/bin/x86_64-w64-mingw32-clang.exe" ]] || \
   [[ -f "${STAGE}/bin/clang.exe" ]]
+[[ -f "${STAGE}/include/zlib.h" ]]
+[[ -f "${STAGE}/lib/libz.a" ]]
+[[ -f "${STAGE}/x86_64-w64-mingw32/lib/libz.a" ]]
 
 make_zip "$STAGE" "$ZIP"

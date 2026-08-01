@@ -36,7 +36,8 @@ write_meta() {
     "cmake": "${CMAKE_VERSION}",
     "ninja": "${NINJA_VERSION}",
     "llvm": "${LLVM_VERSION}",
-    "llvm_mingw": "${LLVM_MINGW_TAG}"
+    "llvm_mingw": "${LLVM_MINGW_TAG}",
+    "zlib": "${ZLIB_VERSION:-}"
   }
 }
 EOF
@@ -113,6 +114,76 @@ stage_ninja() {
   cp -a "$ninja_bin" "${stage}/bin/${exe_name}"
   chmod +x "${stage}/bin/${exe_name}" 2>/dev/null || true
   rm -rf "$tmp"
+}
+
+# Cross-build static zlib into a Windows llvm-mingw stage (run on Linux).
+# Installs headers + libz.a under stage/{include,lib} and the x86_64 sysroot.
+stage_zlib_mingw_windows() {
+  local stage="$1"
+  local zlib_ver="${ZLIB_VERSION:?ZLIB_VERSION unset}"
+  local linux_asset="${LLVM_MINGW_LINUX_ASSET:?LLVM_MINGW_LINUX_ASSET unset}"
+  local zlib_url="https://github.com/madler/zlib/releases/download/v${zlib_ver}/zlib-${zlib_ver}.tar.gz"
+  local zlib_arc="${CACHE}/zlib-${zlib_ver}.tar.gz"
+  local mingw_url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_TAG}/${linux_asset}"
+  local mingw_arc="${CACHE}/${linux_asset}"
+
+  need make
+  need tar
+  download "$zlib_url" "$zlib_arc"
+  download "$mingw_url" "$mingw_arc"
+
+  local xtmp ztmp
+  xtmp="$(mktemp -d)"
+  ztmp="$(mktemp -d)"
+
+  echo "extracting linux-hosted llvm-mingw (zlib cross-build)…"
+  tar --no-same-owner -xJf "$mingw_arc" -C "$xtmp"
+  local xroot
+  xroot="$(find "$xtmp" -maxdepth 1 -type d -name 'llvm-mingw-*' | head -1)"
+  if [[ -z "$xroot" || ! -x "${xroot}/bin/x86_64-w64-mingw32-clang" ]]; then
+    rm -rf "$xtmp" "$ztmp"
+    echo "linux llvm-mingw layout unexpected" >&2
+    exit 1
+  fi
+
+  tar --no-same-owner -xzf "$zlib_arc" -C "$ztmp"
+  local zsrc
+  zsrc="$(find "$ztmp" -maxdepth 1 -type d -name 'zlib-*' | head -1)"
+  if [[ -z "$zsrc" || ! -f "${zsrc}/zlib.h" ]]; then
+    rm -rf "$xtmp" "$ztmp"
+    echo "zlib source missing in $zlib_arc" >&2
+    exit 1
+  fi
+
+  echo "cross-building zlib ${zlib_ver} (static)…"
+  # win32/Makefile.gcc: set absolute tool paths (PREFIX unused when CC is full).
+  make -C "$zsrc" -f win32/Makefile.gcc clean >/dev/null 2>&1 || true
+  if ! make -C "$zsrc" -f win32/Makefile.gcc -j"$(nproc 2>/dev/null || echo 4)" \
+    CC="${xroot}/bin/x86_64-w64-mingw32-clang" \
+    AR="${xroot}/bin/llvm-ar" \
+    RANLIB="${xroot}/bin/llvm-ranlib" \
+    STRIP="${xroot}/bin/llvm-strip" \
+    RC="${xroot}/bin/llvm-windres" \
+    libz.a; then
+    rm -rf "$xtmp" "$ztmp"
+    echo "zlib cross-build failed" >&2
+    exit 1
+  fi
+
+  if [[ ! -f "${zsrc}/libz.a" ]]; then
+    rm -rf "$xtmp" "$ztmp"
+    echo "zlib cross-build failed (libz.a missing)" >&2
+    exit 1
+  fi
+
+  mkdir -p "${stage}/include" "${stage}/lib" \
+    "${stage}/x86_64-w64-mingw32/include" "${stage}/x86_64-w64-mingw32/lib"
+  cp -a "${zsrc}/zlib.h" "${zsrc}/zconf.h" "${stage}/include/"
+  cp -a "${zsrc}/zlib.h" "${zsrc}/zconf.h" "${stage}/x86_64-w64-mingw32/include/"
+  cp -a "${zsrc}/libz.a" "${stage}/lib/libz.a"
+  cp -a "${zsrc}/libz.a" "${stage}/x86_64-w64-mingw32/lib/libz.a"
+  rm -rf "$xtmp" "$ztmp"
+  echo "staged zlib ${zlib_ver} -> include/ + lib/libz.a (+ x86_64 sysroot)"
 }
 
 make_zip() {
