@@ -35,7 +35,7 @@ Each pack ships `retcomm-toolchain.json`:
 ```json
 {
   "id": "cmake-clang-v1",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "os": "windows-x64",
   "kind": "llvm-mingw-ucrt",
   "pins": { "cmake": "…", "ninja": "…", "zlib": "…" }
@@ -43,7 +43,7 @@ Each pack ships `retcomm-toolchain.json`:
 ```
 
 - Pack semver is [`VERSION`](VERSION); bump it when the zip contents change.
-- GitHub release tags should match (e.g. `v1.0.3` / `1.0.3`).
+- GitHub release tags should match (e.g. `v1.0.4` / `1.0.4`).
 - Clients keep side‑by‑side `<tag>/` dirs so older titles can keep working while
   newer ones require a higher floor.
 
@@ -52,7 +52,7 @@ Each pack ships `retcomm-toolchain.json`:
 | Layer | Where | Scope |
 |-------|--------|--------|
 | **Catalog title** | `build.toolchain.min_version` in [retcomm-catalog](https://github.com/TechnicallyComputers/retcomm-catalog) | That title when RetComM installs / builds |
-| **Engine default** | Setup host / `toolchain_pack` in the engine (e.g. psxrecomp Windows → `1.0.3` for bundled zlib) | Standalone wizard for that engine |
+| **Engine default** | Setup host / `toolchain_pack` in the engine (e.g. psxrecomp → `1.0.4` for Linux LTO deps + Windows zlib) | Standalone wizard for that engine |
 | **Override** | `RETCOMM_TOOLCHAIN_MIN_VERSION`, `ensure-toolchain --min-version` | Session / CI |
 
 Different titles (and engines) can require different floors against the **same**
@@ -66,7 +66,7 @@ not in per-game `game.toml`.
 
 | Asset | Contents |
 |-------|----------|
-| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, CMake, Ninja |
+| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2`, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja |
 | `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + static zlib |
 | `cmake-clang-v1-macos-universal.zip` | CMake + Ninja; **requires Xcode CLT** (system clang) |
 
@@ -102,7 +102,7 @@ Point title `build.toolchain` at this repo:
 "toolchain": {
   "id": "cmake-clang-v1",
   "github": "TechnicallyComputers/retcomm-toolchains",
-  "min_version": "1.0.3",
+  "min_version": "1.0.4",
   "asset_glob": {
     "linux": "*cmake-clang-v1*linux*",
     "windows": "*cmake-clang-v1*windows*",
@@ -112,11 +112,13 @@ Point title `build.toolchain` at this repo:
 ```
 
 Omit `min_version` when any cached usable pack is fine. Raise it when a title
-needs a newer dependency (e.g. Windows zlib in `1.0.3+`).
+needs a newer dependency (e.g. Linux LTO/`libxml2` in `1.0.4+`, Windows zlib in
+`1.0.3+`).
 
-Linux packs include `lld` but `env.sh` does **not** force `-fuse-ld=lld`
-(official LLVM lld may need `libxml2.so.2`). The system linker is the default;
-opt in with `LDFLAGS=-fuse-ld=lld` if your host has a compatible libxml2.
+Linux packs from **1.0.4** ship `libxml2.so.2` and default clang to
+`-fuse-ld=lld` (via `bin/clang.cfg`) so Release IPO/`-flto=thin` works without
+`LLVMgold.so` or a host `libxml2.so.2`. `env.sh` also prepends pack `lib/` to
+`LD_LIBRARY_PATH`.
 
 ## License / redistribution
 

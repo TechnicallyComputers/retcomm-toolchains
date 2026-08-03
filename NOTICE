@@ -25,3 +25,10 @@ https://github.com/ninja-build/ninja
 Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler
 zlib License
 https://github.com/madler/zlib
+
+### libxml2 (Linux packs)
+Copyright (C) 1998-2012 Daniel Veillard et al.
+MIT License
+Bundled as libxml2.so.2 (Ubuntu jammy binary) so official LLVM lld can run on
+hosts that only provide a newer SONAME (e.g. libxml2.so.16).
+https://gitlab.gnome.org/GNOME/libxml2

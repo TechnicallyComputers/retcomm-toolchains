@@ -37,7 +37,8 @@ write_meta() {
     "ninja": "${NINJA_VERSION}",
     "llvm": "${LLVM_VERSION}",
     "llvm_mingw": "${LLVM_MINGW_TAG}",
-    "zlib": "${ZLIB_VERSION:-}"
+    "zlib": "${ZLIB_VERSION:-}",
+    "libxml2": "${LIBXML2_DEB_VERSION:-}"
   }
 }
 EOF

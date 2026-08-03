@@ -27,8 +27,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install zip
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zip
+      - name: Install packager deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zip patchelf binutils
 
       - name: Package linux-x64
         run: |

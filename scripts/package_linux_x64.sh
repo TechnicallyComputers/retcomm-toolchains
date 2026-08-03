@@ -10,6 +10,7 @@ need curl
 need tar
 need zip
 need file
+need ar
 
 OUT="${1:-$OUT_DEFAULT}"
 OS_TAG="linux-x64"
@@ -23,13 +24,15 @@ LLVM_URL="https://github.com/llvm/llvm-project/releases/download/${LLVM_TAG}/${L
 CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
 NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-linux.zip"
 LLVM_ARC="${CACHE}/${LLVM_LINUX_ASSET}"
+LIBXML2_ARC="${CACHE}/${LIBXML2_DEB_ASSET}"
 
 download "$CMAKE_URL" "$CMAKE_ARC"
 download "$NINJA_URL" "$NINJA_ARC"
 download "$LLVM_URL" "$LLVM_ARC"
+download "${LIBXML2_DEB_URL}" "$LIBXML2_ARC"
 
 rm -rf "$STAGE"
-mkdir -p "${STAGE}/bin" "${OUT}"
+mkdir -p "${STAGE}/bin" "${STAGE}/lib" "${OUT}"
 
 # --- LLVM (pruned) ---
 LLVM_TMP="$(mktemp -d)"
@@ -77,7 +80,6 @@ if [[ -L "${LLVM_ROOT}/bin/clang" ]]; then
   keep_bins+=("$(readlink "${LLVM_ROOT}/bin/clang")")
 fi
 
-mkdir -p "${STAGE}/lib"
 cp -a "${LLVM_ROOT}/lib/clang" "${STAGE}/lib/"
 for b in "${keep_bins[@]}"; do
   [[ -e "${LLVM_ROOT}/bin/${b}" ]] || continue
@@ -88,6 +90,46 @@ ln -sf clang "${STAGE}/bin/cc"
 ln -sf clang++ "${STAGE}/bin/c++"
 chmod +x "${STAGE}/bin/"* 2>/dev/null || true
 rm -rf "$LLVM_TMP"
+
+# --- libxml2.so.2 (lld dependency; many hosts only have libxml2.so.16) ---
+XML_TMP="$(mktemp -d)"
+echo "extracting libxml2 ${LIBXML2_DEB_VERSION}…"
+(
+  cd "$XML_TMP"
+  ar x "$LIBXML2_ARC"
+  # data.tar may be .xz / .zst / .gz depending on deb tooling.
+  if [[ -f data.tar.xz ]]; then
+    tar --no-same-owner -xJf data.tar.xz
+  elif [[ -f data.tar.zst ]]; then
+    tar --no-same-owner --zstd -xf data.tar.zst
+  elif [[ -f data.tar.gz ]]; then
+    tar --no-same-owner -xzf data.tar.gz
+  else
+    echo "libxml2 deb: missing data.tar.*" >&2
+    exit 1
+  fi
+)
+XML_SO="$(find "$XML_TMP" -type f -name 'libxml2.so.2*' | head -1)"
+[[ -n "$XML_SO" ]] || {
+  echo "libxml2.so.2 missing in ${LIBXML2_DEB_ASSET}" >&2
+  exit 1
+}
+cp -a "$(dirname "$XML_SO")"/libxml2.so.2* "${STAGE}/lib/"
+rm -rf "$XML_TMP"
+
+# Prefer pack lib/ for lld without requiring callers to set LD_LIBRARY_PATH.
+if command -v patchelf >/dev/null 2>&1; then
+  for b in lld ld.lld; do
+    [[ -f "${STAGE}/bin/${b}" ]] || continue
+    patchelf --set-rpath '$ORIGIN/../lib' "${STAGE}/bin/${b}"
+  done
+else
+  echo "warning: patchelf not found; relying on LD_LIBRARY_PATH for libxml2" >&2
+fi
+
+# Default to lld so Release IPO (-flto=thin) does not require LLVMgold.so + system ld.
+printf '%s\n' '-fuse-ld=lld' >"${STAGE}/bin/clang.cfg"
+printf '%s\n' '-fuse-ld=lld' >"${STAGE}/bin/clang++.cfg"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
@@ -101,9 +143,12 @@ export CC="${PACK_ROOT}/bin/clang"
 export CXX="${PACK_ROOT}/bin/clang++"
 export AR="${PACK_ROOT}/bin/llvm-ar"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib"
-# Do not force -fuse-ld=lld: official LLVM lld may need libxml2.so.2, which
-# newer distros renamed. System ld.bfd/gold works with this clang. Opt in with:
-#   export LDFLAGS="-fuse-ld=lld"
+# Bundled libxml2.so.2 for lld; clang.cfg defaults to -fuse-ld=lld (LTO-safe).
+export LD_LIBRARY_PATH="${PACK_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+case " ${LDFLAGS:-} " in
+  *" -fuse-ld=lld "*|*" -fuse-ld=lld") ;;
+  *) export LDFLAGS="-fuse-ld=lld${LDFLAGS:+ ${LDFLAGS}}" ;;
+esac
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -113,6 +158,8 @@ cat >"${STAGE}/README.md" <<EOF
 Portable RetComM / psxrecomp toolchain pack:
 
 - LLVM/Clang ${LLVM_VERSION} + lld (pruned official Linux-X64 build)
+- Bundled \`libxml2.so.2\` (Ubuntu jammy) so lld runs on hosts with only newer SONAMEs
+- \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld\` (Release LTO / IPO without LLVMgold)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
 
@@ -125,7 +172,8 @@ clang --version
 \`\`\`
 
 RetComM prepends \`bin/\` to \`PATH\` automatically when this pack is installed
-under its toolchain cache.
+under its toolchain cache. Setup hosts also prepend \`lib/\` to
+\`LD_LIBRARY_PATH\` when activating the pack.
 
 Uses the host glibc / libstdc++ (typical for Linux portable clang). Requires a
 reasonably modern x86_64 glibc (Ubuntu 22.04+ / similar).
@@ -135,14 +183,17 @@ EOF
 
 write_meta "$STAGE" "$OS_TAG" "llvm-clang-lld"
 
-# Smoke
+# Smoke (including thin LTO — the MotK Release IPO path)
 export PATH="${STAGE}/bin:${PATH}"
+export LD_LIBRARY_PATH="${STAGE}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 "${STAGE}/bin/cmake" --version | head -1
 "${STAGE}/bin/clang" --version | head -1
 "${STAGE}/bin/ninja" --version
 echo 'int main(){return 0;}' >"${STAGE}/.smoke.c"
 "${STAGE}/bin/clang" "${STAGE}/.smoke.c" -o "${STAGE}/.smoke"
 "${STAGE}/.smoke"
-rm -f "${STAGE}/.smoke" "${STAGE}/.smoke.c"
+"${STAGE}/bin/clang" "${STAGE}/.smoke.c" -flto=thin -O2 -o "${STAGE}/.smoke_lto"
+"${STAGE}/.smoke_lto"
+rm -f "${STAGE}/.smoke" "${STAGE}/.smoke_lto" "${STAGE}/.smoke.c"
 
 make_zip "$STAGE" "$ZIP"
