@@ -36,12 +36,16 @@ stage_ninja "$NINJA_ARC" "$STAGE" ninja
 cat >"${STAGE}/env.sh" <<'EOF'
 #!/usr/bin/env bash
 PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="${PACK_ROOT}/bin:${PATH}"
+case ":${PATH}:" in
+  *":${PACK_ROOT}/bin:"*) ;;
+  *) export PATH="${PACK_ROOT}/bin${PATH:+:${PATH}}" ;;
+esac
 # Prefer Xcode CLT / Xcode clang — required for Apple SDK headers & link.
 if [[ -x /usr/bin/clang ]]; then
   export CC="${CC:-/usr/bin/clang}"
   export CXX="${CXX:-/usr/bin/clang++}"
 fi
+export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -63,7 +67,21 @@ xcode-select -p >/dev/null 2>&1 || xcode-select --install
 clang --version
 \`\`\`
 
-## Use
+## Install (recommended)
+
+From this extracted zip root — shared RetComM cache + shell PATH (idempotent):
+
+\`\`\`bash
+./install.sh
+cmake --version
+ninja --version
+\`\`\`
+
+\`\`\`bash
+./uninstall.sh
+\`\`\`
+
+## Session-only (no PATH change)
 
 \`\`\`bash
 . ./env.sh
@@ -75,8 +93,11 @@ Pack version: ${PACK_VERSION}
 EOF
 
 write_meta "$STAGE" "$OS_TAG" "cmake-ninja-system-clang"
+stage_bundle_scripts "$STAGE" unix
 
 [[ -x "${STAGE}/bin/cmake" ]]
 [[ -x "${STAGE}/bin/ninja" ]]
+[[ -x "${STAGE}/install.sh" ]]
+[[ -x "${STAGE}/uninstall.sh" ]]
 
 make_zip "$STAGE" "$ZIP"

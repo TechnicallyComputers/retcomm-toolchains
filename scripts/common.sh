@@ -187,6 +187,29 @@ stage_zlib_mingw_windows() {
   echo "staged zlib ${zlib_ver} -> include/ + lib/libz.a (+ x86_64 sysroot)"
 }
 
+# Copy self-install / uninstall helpers into the pack stage (zip root).
+# $1 = stage root, $2 = family: unix | windows
+stage_bundle_scripts() {
+  local stage="$1" family="$2"
+  local src="${ROOT}/scripts/bundle/${family}"
+  [[ -d "$src" ]] || { echo "bundle scripts missing: $src" >&2; exit 1; }
+  case "$family" in
+    unix)
+      cp -a "${src}/install.sh" "${src}/uninstall.sh" "${stage}/"
+      chmod +x "${stage}/install.sh" "${stage}/uninstall.sh"
+      ;;
+    windows)
+      cp -a "${src}/install.ps1" "${src}/uninstall.ps1" \
+        "${src}/install.bat" "${src}/uninstall.bat" "${stage}/"
+      ;;
+    *)
+      echo "unknown bundle family: $family (want unix|windows)" >&2
+      exit 1
+      ;;
+  esac
+  echo "staged ${family} install/uninstall scripts → ${stage}/"
+}
+
 make_zip() {
   local stage="$1" zip_path="$2"
   need zip

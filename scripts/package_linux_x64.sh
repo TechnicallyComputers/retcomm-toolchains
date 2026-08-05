@@ -138,17 +138,24 @@ cat >"${STAGE}/env.sh" <<'EOF'
 #!/usr/bin/env bash
 # Source:  . ./env.sh
 PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="${PACK_ROOT}/bin:${PATH}"
+case ":${PATH}:" in
+  *":${PACK_ROOT}/bin:"*) ;;
+  *) export PATH="${PACK_ROOT}/bin${PATH:+:${PATH}}" ;;
+esac
 export CC="${PACK_ROOT}/bin/clang"
 export CXX="${PACK_ROOT}/bin/clang++"
 export AR="${PACK_ROOT}/bin/llvm-ar"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib"
 # Bundled libxml2.so.2 for lld; clang.cfg defaults to -fuse-ld=lld (LTO-safe).
-export LD_LIBRARY_PATH="${PACK_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+case ":${LD_LIBRARY_PATH:-}:" in
+  *":${PACK_ROOT}/lib:"*) ;;
+  *) export LD_LIBRARY_PATH="${PACK_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
+esac
 case " ${LDFLAGS:-} " in
   *" -fuse-ld=lld "*|*" -fuse-ld=lld") ;;
   *) export LDFLAGS="-fuse-ld=lld${LDFLAGS:+ ${LDFLAGS}}" ;;
 esac
+export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -163,7 +170,24 @@ Portable RetComM / psxrecomp toolchain pack:
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
 
-## Use
+## Install (recommended)
+
+From this extracted zip root — copies into the shared RetComM cache and adds
+\`latest/bin\` to your shell PATH (idempotent):
+
+\`\`\`bash
+./install.sh
+cmake --version
+clang --version
+\`\`\`
+
+Remove later (idempotent PATH cleanup):
+
+\`\`\`bash
+./uninstall.sh
+\`\`\`
+
+## Session-only (no PATH change)
 
 \`\`\`bash
 . ./env.sh
@@ -171,9 +195,8 @@ cmake --version
 clang --version
 \`\`\`
 
-RetComM prepends \`bin/\` to \`PATH\` automatically when this pack is installed
-under its toolchain cache. Setup hosts also prepend \`lib/\` to
-\`LD_LIBRARY_PATH\` when activating the pack.
+RetComM / title wizards also find the pack under
+\`~/.local/share/retcomm/toolchains/${PACK_ID}/\` after \`./install.sh\`.
 
 Uses the host glibc / libstdc++ (typical for Linux portable clang). Requires a
 reasonably modern x86_64 glibc (Ubuntu 22.04+ / similar).
@@ -182,8 +205,11 @@ Pack version: ${PACK_VERSION}
 EOF
 
 write_meta "$STAGE" "$OS_TAG" "llvm-clang-lld"
+stage_bundle_scripts "$STAGE" unix
 
 # Smoke (including thin LTO — the MotK Release IPO path)
+[[ -x "${STAGE}/install.sh" ]]
+[[ -x "${STAGE}/uninstall.sh" ]]
 export PATH="${STAGE}/bin:${PATH}"
 export LD_LIBRARY_PATH="${STAGE}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 "${STAGE}/bin/cmake" --version | head -1

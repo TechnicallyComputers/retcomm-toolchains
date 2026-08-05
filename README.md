@@ -21,12 +21,64 @@ pointer for simple resolvers.
 |----------|---------|
 | `RETCOMM_TOOLCHAIN_DIR` | Use this unpacked pack root (skip download) |
 | `RETCOMM_TOOLCHAIN_MIN_VERSION` | Semver floor for standalone ensure (wizard / CLI) |
+| `RETCOMM_DATA_HOME` | Override the `…/retcomm` data root used by install scripts |
+| `RETCOMM_TOOLCHAIN_CACHE` | Override `…/toolchains/cmake-clang-v1` for install scripts |
 
 Legacy `%LOCALAPPDATA%\psxrecomp\toolchains\…` is still discovered and migrated
 into the `retcomm` tree on ensure.
 
 Offline: pass a `cmake-clang-v1-*.zip` to the setup wizard / `ensure-toolchain
 --from-zip`; it unpacks into the same shared path.
+
+## Install for development (recommended)
+
+### From a release zip (easiest)
+
+Each GitHub Release asset ships `install` / `uninstall` at the **zip root**.
+Extract, then run from that directory — this copies the pack into the shared
+RetComM cache and adds `latest/bin` to your login PATH (**idempotent** add;
+uninstall removes the entry even if it was already gone).
+
+```bash
+# Linux / macOS
+unzip cmake-clang-v1-linux-x64.zip -d cmake-clang-v1   # or *-macos-universal.zip
+cd cmake-clang-v1
+./install.sh
+cmake --version
+
+./uninstall.sh          # remove cache copy + PATH hook
+```
+
+```bat
+REM Windows — extract zip, then:
+install.bat
+cmake --version
+uninstall.bat
+```
+
+(`install.ps1` / `uninstall.ps1` are also in the Windows zip.)
+
+### From this repo (download or local `dist/`)
+
+```bash
+./scripts/install_linux_x64.sh
+./scripts/install_macos.sh
+```
+
+```powershell
+.\scripts\install_windows_x64.ps1
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--from-zip PATH` / `-FromZip` | Offline install from a release zip |
+| `--download` / `-Download` | Always fetch latest (ignore local `dist/`) |
+| `--force` / `-Force` | Replace an existing matching `<tag>/` dir |
+| `--prefix DIR` / `-Prefix` | Custom cache root (still `<tag>/` underneath) |
+
+RetComM / standalone wizards find the shared cache automatically after install.
+Session-only alternative (no PATH change): source `env.sh` / `call env.bat`
+from the pack root.
 
 ## Versioning
 
@@ -52,8 +104,8 @@ Each pack ships `retcomm-toolchain.json`:
 | Layer | Where | Scope |
 |-------|--------|--------|
 | **Catalog title** | `build.toolchain.min_version` in [retcomm-catalog](https://github.com/TechnicallyComputers/retcomm-catalog) | That title when RetComM installs / builds |
-| **Engine default** | Setup host / `toolchain_pack` in the engine (e.g. psxrecomp → `1.0.4` for Linux LTO deps + Windows zlib) | Standalone wizard for that engine |
-| **Override** | `RETCOMM_TOOLCHAIN_MIN_VERSION`, `ensure-toolchain --min-version` | Session / CI |
+| **Engine / wizard** | None by default — download GitHub `/releases/latest` | Standalone setup wizard / `ensure-toolchain` |
+| **Override** | `RETCOMM_TOOLCHAIN_MIN_VERSION`, `ensure-toolchain --min-version` | Session / CI (optional floor) |
 
 Different titles (and engines) can require different floors against the **same**
 pack id. RetComM picks the newest cached pack that satisfies the title’s
@@ -77,6 +129,8 @@ bin/cmake  bin/ninja  bin/clang …   # compilers vary by OS
 include/ zlib.h zconf.h             # Windows: static zlib for find_package(ZLIB)
 lib/libz.a
 env.sh                              # Windows also has env.bat (sets ZLIB_ROOT)
+install.sh / uninstall.sh           # Unix zip root (PATH + shared cache)
+install.ps1 / uninstall.ps1         # Windows (+ install.bat / uninstall.bat)
 retcomm-toolchain.json
 README.md
 ```

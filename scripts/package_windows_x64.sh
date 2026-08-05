@@ -52,16 +52,21 @@ cat >"${STAGE}/env.bat" <<'EOF'
 @echo off
 set "PACK_ROOT=%~dp0"
 set "PACK_ROOT=%PACK_ROOT:~0,-1%"
-set "PATH=%PACK_ROOT%\bin;%PATH%"
+echo ;%PATH%; | find /I ";%PACK_ROOT%\bin;" >nul
+if errorlevel 1 set "PATH=%PACK_ROOT%\bin;%PATH%"
 set "CC=%PACK_ROOT%\bin\clang.exe"
 set "CXX=%PACK_ROOT%\bin\clang++.exe"
 set "AR=%PACK_ROOT%\bin\llvm-ar.exe"
 set "RANLIB=%PACK_ROOT%\bin\llvm-ranlib.exe"
 set "ZLIB_ROOT=%PACK_ROOT%"
-if defined CMAKE_PREFIX_PATH (
-  set "CMAKE_PREFIX_PATH=%PACK_ROOT%;%CMAKE_PREFIX_PATH%"
-) else (
-  set "CMAKE_PREFIX_PATH=%PACK_ROOT%"
+set "RETCOMM_TOOLCHAIN_DIR=%PACK_ROOT%"
+echo ;%CMAKE_PREFIX_PATH%; | find /I ";%PACK_ROOT%;" >nul
+if errorlevel 1 (
+  if defined CMAKE_PREFIX_PATH (
+    set "CMAKE_PREFIX_PATH=%PACK_ROOT%;%CMAKE_PREFIX_PATH%"
+  ) else (
+    set "CMAKE_PREFIX_PATH=%PACK_ROOT%"
+  )
 )
 EOF
 
@@ -69,17 +74,26 @@ cat >"${STAGE}/env.sh" <<'EOF'
 #!/usr/bin/env bash
 # For Git Bash / MSYS. Prefer env.bat from cmd.exe.
 PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="${PACK_ROOT}/bin:${PATH}"
+case ":${PATH}:" in
+  *":${PACK_ROOT}/bin:"*) ;;
+  *) export PATH="${PACK_ROOT}/bin${PATH:+:${PATH}}" ;;
+esac
 export CC="${PACK_ROOT}/bin/clang.exe"
 export CXX="${PACK_ROOT}/bin/clang++.exe"
 export AR="${PACK_ROOT}/bin/llvm-ar.exe"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib.exe"
 export ZLIB_ROOT="${PACK_ROOT}"
-if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
-  export CMAKE_PREFIX_PATH="${PACK_ROOT}:${CMAKE_PREFIX_PATH}"
-else
-  export CMAKE_PREFIX_PATH="${PACK_ROOT}"
-fi
+export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
+case ":${CMAKE_PREFIX_PATH:-}:" in
+  *":${PACK_ROOT}:"*) ;;
+  *)
+    if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
+      export CMAKE_PREFIX_PATH="${PACK_ROOT}:${CMAKE_PREFIX_PATH}"
+    else
+      export CMAKE_PREFIX_PATH="${PACK_ROOT}"
+    fi
+    ;;
+esac
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -95,7 +109,23 @@ Self-contained Windows toolchain for RetComM / psxrecomp local builds:
 
 No Visual Studio install required. Targets Windows 10+ (UCRT).
 
-## Use
+## Install (recommended)
+
+From this extracted zip root — shared RetComM cache + user PATH (idempotent):
+
+\`\`\`bat
+install.bat
+cmake --version
+clang --version
+\`\`\`
+
+\`\`\`bat
+uninstall.bat
+\`\`\`
+
+PowerShell: \`.\install.ps1\` / \`.\uninstall.ps1\`.
+
+## Session-only (no PATH change)
 
 \`\`\`bat
 call env.bat
@@ -112,6 +142,7 @@ Upstream: https://github.com/mstorsjo/llvm-mingw
 EOF
 
 write_meta "$STAGE" "$OS_TAG" "llvm-mingw-ucrt"
+stage_bundle_scripts "$STAGE" windows
 
 # Structure checks (cannot exec PE on Linux CI without wine).
 [[ -f "${STAGE}/bin/clang.exe" ]]
@@ -123,5 +154,9 @@ write_meta "$STAGE" "$OS_TAG" "llvm-mingw-ucrt"
 [[ -f "${STAGE}/include/zlib.h" ]]
 [[ -f "${STAGE}/lib/libz.a" ]]
 [[ -f "${STAGE}/x86_64-w64-mingw32/lib/libz.a" ]]
+[[ -f "${STAGE}/install.ps1" ]]
+[[ -f "${STAGE}/uninstall.ps1" ]]
+[[ -f "${STAGE}/install.bat" ]]
+[[ -f "${STAGE}/uninstall.bat" ]]
 
 make_zip "$STAGE" "$ZIP"
