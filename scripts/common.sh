@@ -38,10 +38,65 @@ write_meta() {
     "llvm": "${LLVM_VERSION}",
     "llvm_mingw": "${LLVM_MINGW_TAG}",
     "zlib": "${ZLIB_VERSION:-}",
-    "libxml2": "${LIBXML2_DEB_VERSION:-}"
+    "libxml2": "${LIBXML2_DEB_VERSION:-}",
+    "libicu70": "${LIBICU70_DEB_VERSION:-}"
   }
 }
 EOF
+}
+
+# Extract matching shared libraries from an Ubuntu .deb into stage/lib/.
+# $1 = .deb path, $2 = stage root, remaining args = find -name patterns (OR).
+stage_deb_shared_libs() {
+  local deb="$1" stage="$2"
+  shift 2
+  [[ $# -ge 1 ]] || { echo "stage_deb_shared_libs: need at least one -name pattern" >&2; exit 1; }
+  [[ -f "$deb" ]] || { echo "deb missing: $deb" >&2; exit 1; }
+  local tmp find_args=()
+  tmp="$(mktemp -d)"
+  (
+    cd "$tmp"
+    ar x "$deb"
+    if [[ -f data.tar.xz ]]; then
+      tar --no-same-owner -xJf data.tar.xz
+    elif [[ -f data.tar.zst ]]; then
+      tar --no-same-owner --zstd -xf data.tar.zst
+    elif [[ -f data.tar.gz ]]; then
+      tar --no-same-owner -xzf data.tar.gz
+    else
+      echo "deb missing data.tar.* in $deb" >&2
+      exit 1
+    fi
+  )
+  # (file OR symlink) AND (name1 OR name2 …) — SONAME links are often symlinks.
+  find_args=(\( -type f -o -type l \) \()
+  local first=1 pat
+  for pat in "$@"; do
+    if [[ "$first" -eq 1 ]]; then
+      find_args+=(-name "$pat")
+      first=0
+    else
+      find_args+=(-o -name "$pat")
+    fi
+  done
+  find_args+=(\))
+  local -a sos=()
+  mapfile -t sos < <(find "$tmp" "${find_args[@]}" | sort -u)
+  if [[ "${#sos[@]}" -eq 0 ]]; then
+    rm -rf "$tmp"
+    echo "no matching .so in $deb (patterns: $*)" >&2
+    exit 1
+  fi
+  mkdir -p "${stage}/lib"
+  local so
+  for so in "${sos[@]}"; do
+    cp -a "$so" "${stage}/lib/"
+  done
+  # Real ELF objects need +x so the loader / ldd treat them as shared libs.
+  find "${stage}/lib" -maxdepth 1 \( -type f -o -type l \) -name '*.so*' \
+    -exec chmod a+x {} + 2>/dev/null || true
+  rm -rf "$tmp"
+  echo "staged ${#sos[@]} shared lib(s) from $(basename "$deb") → ${stage}/lib/"
 }
 
 stage_cmake_from_archive() {

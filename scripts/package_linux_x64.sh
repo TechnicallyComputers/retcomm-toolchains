@@ -25,11 +25,13 @@ CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
 NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-linux.zip"
 LLVM_ARC="${CACHE}/${LLVM_LINUX_ASSET}"
 LIBXML2_ARC="${CACHE}/${LIBXML2_DEB_ASSET}"
+LIBICU70_ARC="${CACHE}/${LIBICU70_DEB_ASSET}"
 
 download "$CMAKE_URL" "$CMAKE_ARC"
 download "$NINJA_URL" "$NINJA_ARC"
 download "$LLVM_URL" "$LLVM_ARC"
 download "${LIBXML2_DEB_URL}" "$LIBXML2_ARC"
+download "${LIBICU70_DEB_URL}" "$LIBICU70_ARC"
 
 rm -rf "$STAGE"
 mkdir -p "${STAGE}/bin" "${STAGE}/lib" "${OUT}"
@@ -91,40 +93,30 @@ ln -sf clang++ "${STAGE}/bin/c++"
 chmod +x "${STAGE}/bin/"* 2>/dev/null || true
 rm -rf "$LLVM_TMP"
 
-# --- libxml2.so.2 (lld dependency; many hosts only have libxml2.so.16) ---
-XML_TMP="$(mktemp -d)"
+# --- libxml2.so.2 + ICU 70 (lld deps; Fedora/Cachy often lack these SONAMEs) ---
 echo "extracting libxml2 ${LIBXML2_DEB_VERSION}…"
-(
-  cd "$XML_TMP"
-  ar x "$LIBXML2_ARC"
-  # data.tar may be .xz / .zst / .gz depending on deb tooling.
-  if [[ -f data.tar.xz ]]; then
-    tar --no-same-owner -xJf data.tar.xz
-  elif [[ -f data.tar.zst ]]; then
-    tar --no-same-owner --zstd -xf data.tar.zst
-  elif [[ -f data.tar.gz ]]; then
-    tar --no-same-owner -xzf data.tar.gz
-  else
-    echo "libxml2 deb: missing data.tar.*" >&2
-    exit 1
-  fi
-)
-XML_SO="$(find "$XML_TMP" -type f -name 'libxml2.so.2*' | head -1)"
-[[ -n "$XML_SO" ]] || {
-  echo "libxml2.so.2 missing in ${LIBXML2_DEB_ASSET}" >&2
-  exit 1
-}
-cp -a "$(dirname "$XML_SO")"/libxml2.so.2* "${STAGE}/lib/"
-rm -rf "$XML_TMP"
+stage_deb_shared_libs "$LIBXML2_ARC" "$STAGE" 'libxml2.so.2' 'libxml2.so.2.*'
+echo "extracting libicu70 ${LIBICU70_DEB_VERSION}…"
+# libxml2→icuuc→icudata; skip i18n/io/test/tu to keep the pack lean.
+stage_deb_shared_libs "$LIBICU70_ARC" "$STAGE" \
+  'libicuuc.so.70' 'libicuuc.so.70.*' \
+  'libicudata.so.70' 'libicudata.so.70.*'
 
-# Prefer pack lib/ for lld without requiring callers to set LD_LIBRARY_PATH.
+# Prefer pack lib/ without requiring callers to set LD_LIBRARY_PATH.
+# lld → libxml2 (via RUNPATH on the binary); libxml2 → libicuuc (via RUNPATH
+# on the *shared object* — the executable's RUNPATH does not apply to NEEDED
+# of libraries it loads when DT_RUNPATH is used).
 if command -v patchelf >/dev/null 2>&1; then
   for b in lld ld.lld; do
     [[ -f "${STAGE}/bin/${b}" ]] || continue
     patchelf --set-rpath '$ORIGIN/../lib' "${STAGE}/bin/${b}"
   done
+  for so in "${STAGE}/lib"/libxml2.so.* "${STAGE}/lib"/libicuuc.so.*; do
+    [[ -e "$so" && ! -L "$so" ]] || continue
+    patchelf --set-rpath '$ORIGIN' "$so"
+  done
 else
-  echo "warning: patchelf not found; relying on LD_LIBRARY_PATH for libxml2" >&2
+  echo "warning: patchelf not found; relying on LD_LIBRARY_PATH for bundled libs" >&2
 fi
 
 # Default to lld so Release IPO (-flto=thin) does not require LLVMgold.so + system ld.
@@ -146,7 +138,7 @@ export CC="${PACK_ROOT}/bin/clang"
 export CXX="${PACK_ROOT}/bin/clang++"
 export AR="${PACK_ROOT}/bin/llvm-ar"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib"
-# Bundled libxml2.so.2 for lld; clang.cfg defaults to -fuse-ld=lld (LTO-safe).
+# Bundled libxml2.so.2 + libicuuc/libicudata .70 for lld; clang.cfg → -fuse-ld=lld.
 case ":${LD_LIBRARY_PATH:-}:" in
   *":${PACK_ROOT}/lib:"*) ;;
   *) export LD_LIBRARY_PATH="${PACK_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
@@ -165,7 +157,8 @@ cat >"${STAGE}/README.md" <<EOF
 Portable RetComM / psxrecomp toolchain pack:
 
 - LLVM/Clang ${LLVM_VERSION} + lld (pruned official Linux-X64 build)
-- Bundled \`libxml2.so.2\` (Ubuntu jammy) so lld runs on hosts with only newer SONAMEs
+- Bundled \`libxml2.so.2\` + \`libicuuc.so.70\` / \`libicudata.so.70\` (Ubuntu jammy)
+  so lld runs on hosts that only ship newer SONAMEs (e.g. ICU 78)
 - \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld\` (Release LTO / IPO without LLVMgold)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
@@ -211,10 +204,31 @@ stage_bundle_scripts "$STAGE" unix
 [[ -x "${STAGE}/install.sh" ]]
 [[ -x "${STAGE}/uninstall.sh" ]]
 export PATH="${STAGE}/bin:${PATH}"
-export LD_LIBRARY_PATH="${STAGE}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+# Prove RUNPATH/$ORIGIN without ambient LD_LIBRARY_PATH (wizard often only
+# prepends bin/ to PATH; env.sh still sets LD_LIBRARY_PATH as a belt).
+unset LD_LIBRARY_PATH || true
 "${STAGE}/bin/cmake" --version | head -1
 "${STAGE}/bin/clang" --version | head -1
 "${STAGE}/bin/ninja" --version
+"${STAGE}/bin/ld.lld" --version | head -1
+# libicuuc is a NEEDED of bundled libxml2 — must resolve via libxml2's $ORIGIN.
+XML_ICU="$(ldd "${STAGE}/lib/libxml2.so.2" \
+  | awk '/libicuuc\.so\.70/{print $3; exit}')"
+STAGE_LIB_ABS="$(cd "${STAGE}/lib" && pwd)"
+[[ -n "$XML_ICU" && -e "$XML_ICU" ]] || {
+  echo "libxml2.so.2 unresolved libicuuc.so.70 (ldd)" >&2
+  ldd "${STAGE}/lib/libxml2.so.2" >&2 || true
+  exit 1
+}
+XML_ICU_ABS="$(cd "$(dirname "$XML_ICU")" && pwd)/$(basename "$XML_ICU")"
+case "$XML_ICU_ABS" in
+  "${STAGE_LIB_ABS}/"*) ;;
+  *)
+    echo "libxml2 libicuuc.so.70 not from pack lib/ (got: $XML_ICU_ABS)" >&2
+    exit 1
+    ;;
+esac
+echo "libxml2 → libicuuc.so.70 → ${XML_ICU_ABS}"
 echo 'int main(){return 0;}' >"${STAGE}/.smoke.c"
 "${STAGE}/bin/clang" "${STAGE}/.smoke.c" -o "${STAGE}/.smoke"
 "${STAGE}/.smoke"

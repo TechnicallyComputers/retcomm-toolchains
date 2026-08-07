@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install packager deps
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zip patchelf binutils
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zip patchelf binutils zstd
 
       - name: Package linux-x64
         run: |

@@ -118,7 +118,7 @@ not in per-game `game.toml`.
 
 | Asset | Contents |
 |-------|----------|
-| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2`, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja |
+| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja |
 | `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + static zlib |
 | `cmake-clang-v1-macos-universal.zip` | CMake + Ninja; **requires Xcode CLT** (system clang) |
 
@@ -156,7 +156,7 @@ Point title `build.toolchain` at this repo:
 "toolchain": {
   "id": "cmake-clang-v1",
   "github": "TechnicallyComputers/retcomm-toolchains",
-  "min_version": "1.0.4",
+  "min_version": "1.0.5",
   "asset_glob": {
     "linux": "*cmake-clang-v1*linux*",
     "windows": "*cmake-clang-v1*windows*",
@@ -166,16 +166,20 @@ Point title `build.toolchain` at this repo:
 ```
 
 Omit `min_version` when any cached usable pack is fine. Raise it when a title
-needs a newer dependency (e.g. Linux LTO/`libxml2` in `1.0.4+`, Windows zlib in
-`1.0.3+`).
+needs a newer dependency (e.g. Linux ICU 70 in `1.0.5+`, LTO/`libxml2` in
+`1.0.4+`, Windows zlib in `1.0.3+`).
 
 Linux packs from **1.0.4** ship `libxml2.so.2` and default clang to
 `-fuse-ld=lld` (via `bin/clang.cfg`) so Release IPO/`-flto=thin` works without
-`LLVMgold.so` or a host `libxml2.so.2`. `env.sh` also prepends pack `lib/` to
-`LD_LIBRARY_PATH`.
+`LLVMgold.so` or a host `libxml2.so.2`. **1.0.5+** also bundles
+`libicuuc.so.70` / `libicudata.so.70` (Ubuntu jammy) so `ld.lld` runs on hosts
+that only ship newer ICU SONAMEs (Fedora/Cachy ICU 78). `env.sh` prepends pack
+`lib/` to `LD_LIBRARY_PATH`; `patchelf` sets `$ORIGIN/../lib` on `lld` /
+`ld.lld`.
 
 ## License / redistribution
 
 This repository’s scripts are MIT. Packaged binaries are redistributed under
 their upstream licenses (LLVM Apache-2.0 with LLVM exceptions, Kitware BSD,
-Ninja Apache-2.0, zlib, mingw-w64 various). See [`NOTICE`](NOTICE).
+Ninja Apache-2.0, zlib, ICU Unicode License, mingw-w64 various). See
+[`NOTICE`](NOTICE).

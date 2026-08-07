@@ -32,3 +32,10 @@ MIT License
 Bundled as libxml2.so.2 (Ubuntu jammy binary) so official LLVM lld can run on
 hosts that only provide a newer SONAME (e.g. libxml2.so.16).
 https://gitlab.gnome.org/GNOME/libxml2
+
+### ICU (Linux packs)
+Copyright (C) 2016 and later Unicode, Inc. and others
+Unicode License V3 / ICU License
+Bundled as libicuuc.so.70 + libicudata.so.70 (Ubuntu jammy libicu70) so
+libxml2/lld can run on hosts that only ship a newer ICU SONAME (e.g. .78).
+https://icu.unicode.org/
