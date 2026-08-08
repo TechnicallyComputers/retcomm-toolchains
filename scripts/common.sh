@@ -39,10 +39,88 @@ write_meta() {
     "llvm_mingw": "${LLVM_MINGW_TAG}",
     "zlib": "${ZLIB_VERSION:-}",
     "libxml2": "${LIBXML2_DEB_VERSION:-}",
-    "libicu70": "${LIBICU70_DEB_VERSION:-}"
+    "libicu70": "${LIBICU70_DEB_VERSION:-}",
+    "python": "${PYTHON_VERSION:-}",
+    "python_pbs": "${PYTHON_PBS_TAG:-}"
   }
 }
 EOF
+}
+
+# Stage astral-sh python-build-standalone install_only_stripped under stage/python/
+# (or stage/python/<subdir>/ for multi-arch macos).
+# $1 = stage root
+# $2 = PBS target triple (e.g. x86_64-unknown-linux-gnu)
+# $3 = optional subdir under python/ (empty → stage/python)
+stage_python_standalone() {
+  local stage="$1" triple="$2" subdir="${3:-}"
+  local py_ver="${PYTHON_VERSION:?PYTHON_VERSION unset}"
+  local pbs_tag="${PYTHON_PBS_TAG:?PYTHON_PBS_TAG unset}"
+  local prefix="${PYTHON_PBS_URL_PREFIX:?PYTHON_PBS_URL_PREFIX unset}"
+  local asset="cpython-${py_ver}+${pbs_tag}-${triple}-install_only_stripped.tar.gz"
+  local url="${prefix}/${asset}"
+  local arc="${CACHE}/${asset}"
+
+  need tar
+  download "$url" "$arc"
+
+  local tmp dest
+  tmp="$(mktemp -d)"
+  echo "extracting CPython ${py_ver} (${triple})…"
+  tar --no-same-owner -xzf "$arc" -C "$tmp"
+
+  # install_only layout: top-level python/ with bin/python3 or python.exe
+  local py_root
+  py_root="$(find "$tmp" -maxdepth 2 -type d -name python | head -1)"
+  [[ -n "$py_root" ]] || {
+    rm -rf "$tmp"
+    echo "python/ missing in $asset" >&2
+    exit 1
+  }
+
+  if [[ -n "$subdir" ]]; then
+    dest="${stage}/python/${subdir}"
+  else
+    dest="${stage}/python"
+  fi
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  mv "$py_root" "$dest"
+  rm -rf "$tmp"
+
+  if [[ -f "${dest}/python.exe" ]]; then
+    echo "staged CPython ${py_ver} → ${dest}/python.exe"
+  elif [[ -x "${dest}/bin/python3" || -x "${dest}/bin/python" ]]; then
+    chmod +x "${dest}/bin/python3" "${dest}/bin/python" 2>/dev/null || true
+    echo "staged CPython ${py_ver} → ${dest}/bin/python3"
+  else
+    echo "python binary missing under ${dest}" >&2
+    exit 1
+  fi
+}
+
+# macOS universal: both Darwin arches + a small dispatcher as python/bin/python3.
+stage_python_macos_universal() {
+  local stage="$1"
+  stage_python_standalone "$stage" "aarch64-apple-darwin" "aarch64-apple-darwin"
+  stage_python_standalone "$stage" "x86_64-apple-darwin" "x86_64-apple-darwin"
+  mkdir -p "${stage}/python/bin"
+  cat >"${stage}/python/bin/python3" <<'EOF'
+#!/bin/sh
+ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+ARCH="$(uname -m 2>/dev/null || echo unknown)"
+case "$ARCH" in
+  arm64|aarch64) EXEC="${ROOT}/aarch64-apple-darwin/bin/python3" ;;
+  x86_64|i386|i686) EXEC="${ROOT}/x86_64-apple-darwin/bin/python3" ;;
+  *)
+    echo "retcomm python: unsupported macOS arch: $ARCH" >&2
+    exit 127
+    ;;
+esac
+exec "$EXEC" "$@"
+EOF
+  chmod +x "${stage}/python/bin/python3"
+  ln -sf python3 "${stage}/python/bin/python"
 }
 
 # Extract matching shared libraries from an Ubuntu .deb into stage/lib/.

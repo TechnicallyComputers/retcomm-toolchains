@@ -32,6 +32,7 @@ mkdir -p "${STAGE}/bin" "${OUT}"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" macos
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
+stage_python_macos_universal "$STAGE"
 
 cat >"${STAGE}/env.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -40,12 +41,17 @@ case ":${PATH}:" in
   *":${PACK_ROOT}/bin:"*) ;;
   *) export PATH="${PACK_ROOT}/bin${PATH:+:${PATH}}" ;;
 esac
+case ":${PATH}:" in
+  *":${PACK_ROOT}/python/bin:"*) ;;
+  *) export PATH="${PACK_ROOT}/python/bin${PATH:+:${PATH}}" ;;
+esac
 # Prefer Xcode CLT / Xcode clang — required for Apple SDK headers & link.
 if [[ -x /usr/bin/clang ]]; then
   export CC="${CC:-/usr/bin/clang}"
   export CXX="${CXX:-/usr/bin/clang++}"
 fi
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
+export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -56,6 +62,7 @@ macOS RetComM toolchain helpers:
 
 - CMake ${CMAKE_VERSION} (universal)
 - Ninja ${NINJA_VERSION}
+- CPython ${PYTHON_VERSION} (python-build-standalone, arm64 + x86_64)
 
 **Apple Clang + Xcode Command Line Tools are required** (system SDK). This pack
 does not bundle a compiler — same approach as GitHub \`macos-*\` runners.
@@ -97,6 +104,9 @@ stage_bundle_scripts "$STAGE" unix
 
 [[ -x "${STAGE}/bin/cmake" ]]
 [[ -x "${STAGE}/bin/ninja" ]]
+[[ -x "${STAGE}/python/bin/python3" ]]
+[[ -x "${STAGE}/python/aarch64-apple-darwin/bin/python3" ]]
+[[ -x "${STAGE}/python/x86_64-apple-darwin/bin/python3" ]]
 [[ -x "${STAGE}/install.sh" ]]
 [[ -x "${STAGE}/uninstall.sh" ]]
 

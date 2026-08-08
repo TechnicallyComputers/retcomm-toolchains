@@ -125,6 +125,7 @@ printf '%s\n' '-fuse-ld=lld' >"${STAGE}/bin/clang++.cfg"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
+stage_python_standalone "$STAGE" "x86_64-unknown-linux-gnu"
 
 cat >"${STAGE}/env.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -133,6 +134,10 @@ PACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 case ":${PATH}:" in
   *":${PACK_ROOT}/bin:"*) ;;
   *) export PATH="${PACK_ROOT}/bin${PATH:+:${PATH}}" ;;
+esac
+case ":${PATH}:" in
+  *":${PACK_ROOT}/python/bin:"*) ;;
+  *) export PATH="${PACK_ROOT}/python/bin${PATH:+:${PATH}}" ;;
 esac
 export CC="${PACK_ROOT}/bin/clang"
 export CXX="${PACK_ROOT}/bin/clang++"
@@ -148,6 +153,7 @@ case " ${LDFLAGS:-} " in
   *) export LDFLAGS="-fuse-ld=lld${LDFLAGS:+ ${LDFLAGS}}" ;;
 esac
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
+export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -162,6 +168,7 @@ Portable RetComM / psxrecomp toolchain pack:
 - \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld\` (Release LTO / IPO without LLVMgold)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
+- CPython ${PYTHON_VERSION} (python-build-standalone; no system Python required)
 
 ## Install (recommended)
 
@@ -203,6 +210,7 @@ stage_bundle_scripts "$STAGE" unix
 # Smoke (including thin LTO — the MotK Release IPO path)
 [[ -x "${STAGE}/install.sh" ]]
 [[ -x "${STAGE}/uninstall.sh" ]]
+[[ -x "${STAGE}/python/bin/python3" ]]
 export PATH="${STAGE}/bin:${PATH}"
 # Prove RUNPATH/$ORIGIN without ambient LD_LIBRARY_PATH (wizard often only
 # prepends bin/ to PATH; env.sh still sets LD_LIBRARY_PATH as a belt).
@@ -211,6 +219,7 @@ unset LD_LIBRARY_PATH || true
 "${STAGE}/bin/clang" --version | head -1
 "${STAGE}/bin/ninja" --version
 "${STAGE}/bin/ld.lld" --version | head -1
+"${STAGE}/python/bin/python3" -c 'import sys; print(sys.version)'
 # libicuuc is a NEEDED of bundled libxml2 — must resolve via libxml2's $ORIGIN.
 XML_ICU="$(ldd "${STAGE}/lib/libxml2.so.2" \
   | awk '/libicuuc\.so\.70/{print $3; exit}')"

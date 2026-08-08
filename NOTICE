@@ -39,3 +39,11 @@ Unicode License V3 / ICU License
 Bundled as libicuuc.so.70 + libicudata.so.70 (Ubuntu jammy libicu70) so
 libxml2/lld can run on hosts that only ship a newer ICU SONAME (e.g. .78).
 https://icu.unicode.org/
+
+### CPython (all packs)
+Copyright (c) Python Software Foundation and contributors
+PSF License Agreement
+Bundled via astral-sh/python-build-standalone (install_only_stripped) under
+python/ for RetComM generate without a system Python install.
+https://www.python.org/downloads/
+https://github.com/astral-sh/python-build-standalone

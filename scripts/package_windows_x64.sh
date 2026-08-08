@@ -47,6 +47,7 @@ rm -rf "$MINGW_TMP"
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" windows
 stage_ninja "$NINJA_ARC" "$STAGE" ninja.exe
 stage_zlib_mingw_windows "$STAGE"
+stage_python_standalone "$STAGE" "x86_64-pc-windows-msvc"
 
 cat >"${STAGE}/env.bat" <<'EOF'
 @echo off
@@ -54,12 +55,15 @@ set "PACK_ROOT=%~dp0"
 set "PACK_ROOT=%PACK_ROOT:~0,-1%"
 echo ;%PATH%; | find /I ";%PACK_ROOT%\bin;" >nul
 if errorlevel 1 set "PATH=%PACK_ROOT%\bin;%PATH%"
+echo ;%PATH%; | find /I ";%PACK_ROOT%\python;" >nul
+if errorlevel 1 set "PATH=%PACK_ROOT%\python;%PATH%"
 set "CC=%PACK_ROOT%\bin\clang.exe"
 set "CXX=%PACK_ROOT%\bin\clang++.exe"
 set "AR=%PACK_ROOT%\bin\llvm-ar.exe"
 set "RANLIB=%PACK_ROOT%\bin\llvm-ranlib.exe"
 set "ZLIB_ROOT=%PACK_ROOT%"
 set "RETCOMM_TOOLCHAIN_DIR=%PACK_ROOT%"
+set "RETCOMM_PYTHON=%PACK_ROOT%\python\python.exe"
 echo ;%CMAKE_PREFIX_PATH%; | find /I ";%PACK_ROOT%;" >nul
 if errorlevel 1 (
   if defined CMAKE_PREFIX_PATH (
@@ -78,12 +82,17 @@ case ":${PATH}:" in
   *":${PACK_ROOT}/bin:"*) ;;
   *) export PATH="${PACK_ROOT}/bin${PATH:+:${PATH}}" ;;
 esac
+case ":${PATH}:" in
+  *":${PACK_ROOT}/python:"*) ;;
+  *) export PATH="${PACK_ROOT}/python${PATH:+:${PATH}}" ;;
+esac
 export CC="${PACK_ROOT}/bin/clang.exe"
 export CXX="${PACK_ROOT}/bin/clang++.exe"
 export AR="${PACK_ROOT}/bin/llvm-ar.exe"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib.exe"
 export ZLIB_ROOT="${PACK_ROOT}"
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
+export RETCOMM_PYTHON="${PACK_ROOT}/python/python.exe"
 case ":${CMAKE_PREFIX_PATH:-}:" in
   *":${PACK_ROOT}:"*) ;;
   *)
@@ -106,6 +115,7 @@ Self-contained Windows toolchain for RetComM / psxrecomp local builds:
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
 - zlib ${ZLIB_VERSION} (static \`libz.a\` + headers for \`find_package(ZLIB)\`)
+- CPython ${PYTHON_VERSION} (python-build-standalone; no Store alias / system install)
 
 No Visual Studio install required. Targets Windows 10+ (UCRT).
 
@@ -154,6 +164,7 @@ stage_bundle_scripts "$STAGE" windows
 [[ -f "${STAGE}/include/zlib.h" ]]
 [[ -f "${STAGE}/lib/libz.a" ]]
 [[ -f "${STAGE}/x86_64-w64-mingw32/lib/libz.a" ]]
+[[ -f "${STAGE}/python/python.exe" ]]
 [[ -f "${STAGE}/install.ps1" ]]
 [[ -f "${STAGE}/uninstall.ps1" ]]
 [[ -f "${STAGE}/install.bat" ]]
