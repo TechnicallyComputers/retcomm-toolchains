@@ -47,6 +47,7 @@ rm -rf "$MINGW_TMP"
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" windows
 stage_ninja "$NINJA_ARC" "$STAGE" ninja.exe
 stage_zlib_mingw_windows "$STAGE"
+stage_sdl3_mingw_windows "$STAGE"
 stage_python_standalone "$STAGE" "x86_64-pc-windows-msvc"
 
 cat >"${STAGE}/env.bat" <<'EOF'
@@ -115,6 +116,7 @@ Self-contained Windows toolchain for RetComM / psxrecomp local builds:
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
 - zlib ${ZLIB_VERSION} (static \`libz.a\` + headers for \`find_package(ZLIB)\`)
+- SDL3 ${SDL3_VERSION} (static \`libSDL3.a\` + CMake CONFIG for \`find_package(SDL3)\`)
 - CPython ${PYTHON_VERSION} (python-build-standalone; no Store alias / system install)
 
 No Visual Studio install required. Targets Windows 10+ (UCRT).
@@ -144,7 +146,7 @@ clang --version
 \`\`\`
 
 \`env.bat\` / \`env.sh\` prepend \`bin\\\` to \`PATH\` and set \`CMAKE_PREFIX_PATH\` /
-\`ZLIB_ROOT\` to the pack root so CMake finds zlib.
+\`ZLIB_ROOT\` to the pack root so CMake finds zlib and SDL3.
 
 Pack version: ${PACK_VERSION}
 
@@ -164,6 +166,10 @@ stage_bundle_scripts "$STAGE" windows
 [[ -f "${STAGE}/include/zlib.h" ]]
 [[ -f "${STAGE}/lib/libz.a" ]]
 [[ -f "${STAGE}/x86_64-w64-mingw32/lib/libz.a" ]]
+[[ -f "${STAGE}/lib/libSDL3.a" ]]
+[[ -f "${STAGE}/lib/cmake/SDL3/SDL3Config.cmake" ]] || \
+  [[ -f "${STAGE}/lib/cmake/SDL3/SDL3-config.cmake" ]]
+[[ -d "${STAGE}/include/SDL3" ]]
 [[ -f "${STAGE}/python/python.exe" ]]
 [[ -f "${STAGE}/install.ps1" ]]
 [[ -f "${STAGE}/uninstall.ps1" ]]

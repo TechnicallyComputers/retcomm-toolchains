@@ -125,6 +125,7 @@ printf '%s\n' '-fuse-ld=lld' >"${STAGE}/bin/clang++.cfg"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
+stage_sdl3_linux "$STAGE"
 stage_python_standalone "$STAGE" "x86_64-unknown-linux-gnu"
 
 cat >"${STAGE}/env.sh" <<'EOF'
@@ -154,6 +155,16 @@ case " ${LDFLAGS:-} " in
 esac
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
+case ":${CMAKE_PREFIX_PATH:-}:" in
+  *":${PACK_ROOT}:"*) ;;
+  *)
+    if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
+      export CMAKE_PREFIX_PATH="${PACK_ROOT}:${CMAKE_PREFIX_PATH}"
+    else
+      export CMAKE_PREFIX_PATH="${PACK_ROOT}"
+    fi
+    ;;
+esac
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -168,6 +179,7 @@ Portable RetComM / psxrecomp toolchain pack:
 - \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld\` (Release LTO / IPO without LLVMgold)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
+- SDL3 ${SDL3_VERSION} (static \`libSDL3.a\` + CMake CONFIG for \`find_package(SDL3)\`)
 - CPython ${PYTHON_VERSION} (python-build-standalone; no system Python required)
 
 ## Install (recommended)
@@ -211,6 +223,10 @@ stage_bundle_scripts "$STAGE" unix
 [[ -x "${STAGE}/install.sh" ]]
 [[ -x "${STAGE}/uninstall.sh" ]]
 [[ -x "${STAGE}/python/bin/python3" ]]
+[[ -f "${STAGE}/lib/libSDL3.a" ]]
+[[ -f "${STAGE}/lib/cmake/SDL3/SDL3Config.cmake" ]] || \
+  [[ -f "${STAGE}/lib/cmake/SDL3/SDL3-config.cmake" ]]
+[[ -d "${STAGE}/include/SDL3" ]]
 export PATH="${STAGE}/bin:${PATH}"
 # Prove RUNPATH/$ORIGIN without ambient LD_LIBRARY_PATH (wizard often only
 # prepends bin/ to PATH; env.sh still sets LD_LIBRARY_PATH as a belt).

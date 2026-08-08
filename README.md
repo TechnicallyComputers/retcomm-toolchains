@@ -90,7 +90,7 @@ Each pack ships `retcomm-toolchain.json`:
   "version": "1.0.4",
   "os": "windows-x64",
   "kind": "llvm-mingw-ucrt",
-  "pins": { "cmake": "…", "ninja": "…", "zlib": "…" }
+  "pins": { "cmake": "…", "ninja": "…", "zlib": "…", "sdl3": "…" }
 }
 ```
 
@@ -118,9 +118,9 @@ not in per-game `game.toml`.
 
 | Asset | Contents |
 |-------|----------|
-| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja, embeddable CPython |
-| `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + static zlib + embeddable CPython |
-| `cmake-clang-v1-macos-universal.zip` | CMake + Ninja + embeddable CPython (arm64+x64); **requires Xcode CLT** (system clang) |
+| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja, static SDL3, embeddable CPython |
+| `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + static zlib + static SDL3 + embeddable CPython |
+| `cmake-clang-v1-macos-universal.zip` | CMake + Ninja + embeddable CPython (arm64+x64); **requires Xcode CLT** (system clang); SDL3 via FetchContent / system |
 
 Layout (client contract):
 
@@ -128,8 +128,10 @@ Layout (client contract):
 bin/cmake  bin/ninja  bin/clang …   # compilers vary by OS
 python/                             # CPython (PBS); Windows: python.exe, Unix: bin/python3
 include/ zlib.h zconf.h             # Windows: static zlib for find_package(ZLIB)
-lib/libz.a
-env.sh                              # Windows also has env.bat (sets ZLIB_ROOT + RETCOMM_PYTHON)
+include/SDL3/…                      # Linux + Windows: static SDL3 (1.0.7+)
+lib/libz.a                          # Windows
+lib/libSDL3.a  lib/cmake/SDL3/      # Linux + Windows (find_package(SDL3 CONFIG))
+env.sh                              # Windows also has env.bat (CMAKE_PREFIX_PATH + ZLIB_ROOT)
 install.sh / uninstall.sh           # Unix zip root (PATH + shared cache)
 install.ps1 / uninstall.ps1         # Windows (+ install.bat / uninstall.bat)
 retcomm-toolchain.json
@@ -167,8 +169,15 @@ Point title `build.toolchain` at this repo:
 ```
 
 Omit `min_version` when any cached usable pack is fine. Raise it when a title
-needs a newer dependency (e.g. embeddable Python in `1.0.6+`, Linux ICU 70 in
-`1.0.5+`, LTO/`libxml2` in `1.0.4+`, Windows zlib in `1.0.3+`).
+needs a newer dependency (e.g. prebuilt SDL3 in `1.0.7+`, embeddable Python in
+`1.0.6+`, Linux ICU 70 in `1.0.5+`, LTO/`libxml2` in `1.0.4+`, Windows zlib in
+`1.0.3+`).
+
+**1.0.7+** ships a pack-matched **static SDL3** (CMake CONFIG under
+`lib/cmake/SDL3`) so first-time game configures skip FetchContent’s hundreds of
+`Looking for …` try_compiles and the subsequent SDL compile. Clients should put
+the pack root on `CMAKE_PREFIX_PATH` (install/`env.sh` / toolchain activate
+already do).
 
 Linux packs from **1.0.4** ship `libxml2.so.2` and default clang to
 `-fuse-ld=lld` (via `bin/clang.cfg`) so Release IPO/`-flto=thin` works without
