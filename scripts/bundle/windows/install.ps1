@@ -132,13 +132,13 @@ Add-UserPathDir $binDir
 [Environment]::SetEnvironmentVariable("RETCOMM_TOOLCHAIN_DIR", $latest, "User")
 $env:RETCOMM_TOOLCHAIN_DIR = $latest
 
-# Session convenience (env.bat-equivalent bits for this process)
+# Session convenience (env.bat-equivalent bits for this process).
+# Do not set CMAKE_PREFIX_PATH to the pack root — mingw include/ breaks libc++.
 $env:ZLIB_ROOT = $latest
-$prefix = [Environment]::GetEnvironmentVariable("CMAKE_PREFIX_PATH", "Process")
-if ([string]::IsNullOrWhiteSpace($prefix)) {
-    $env:CMAKE_PREFIX_PATH = $latest
-} elseif ($prefix -notlike "*$latest*") {
-    $env:CMAKE_PREFIX_PATH = "$latest;$prefix"
+$sdl3Cfg = Join-Path $latest "lib\cmake\SDL3\SDL3Config.cmake"
+$sdl3CfgAlt = Join-Path $latest "lib\cmake\SDL3\SDL3-config.cmake"
+if ((Test-Path -LiteralPath $sdl3Cfg) -or (Test-Path -LiteralPath $sdl3CfgAlt)) {
+    $env:SDL3_DIR = (Join-Path $latest "lib\cmake\SDL3")
 }
 
 Write-Host ""

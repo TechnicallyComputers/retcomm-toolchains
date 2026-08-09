@@ -65,13 +65,11 @@ set "RANLIB=%PACK_ROOT%\bin\llvm-ranlib.exe"
 set "ZLIB_ROOT=%PACK_ROOT%"
 set "RETCOMM_TOOLCHAIN_DIR=%PACK_ROOT%"
 set "RETCOMM_PYTHON=%PACK_ROOT%\python\python.exe"
-echo ;%CMAKE_PREFIX_PATH%; | find /I ";%PACK_ROOT%;" >nul
-if errorlevel 1 (
-  if defined CMAKE_PREFIX_PATH (
-    set "CMAKE_PREFIX_PATH=%PACK_ROOT%;%CMAKE_PREFIX_PATH%"
-  ) else (
-    set "CMAKE_PREFIX_PATH=%PACK_ROOT%"
-  )
+rem Do not put PACK_ROOT on CMAKE_PREFIX_PATH — mingw include/ poisons libc++.
+if exist "%PACK_ROOT%\lib\cmake\SDL3\SDL3Config.cmake" (
+  set "SDL3_DIR=%PACK_ROOT%\lib\cmake\SDL3"
+) else if exist "%PACK_ROOT%\lib\cmake\SDL3\SDL3-config.cmake" (
+  set "SDL3_DIR=%PACK_ROOT%\lib\cmake\SDL3"
 )
 EOF
 
@@ -94,16 +92,11 @@ export RANLIB="${PACK_ROOT}/bin/llvm-ranlib.exe"
 export ZLIB_ROOT="${PACK_ROOT}"
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/python.exe"
-case ":${CMAKE_PREFIX_PATH:-}:" in
-  *":${PACK_ROOT}:"*) ;;
-  *)
-    if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
-      export CMAKE_PREFIX_PATH="${PACK_ROOT}:${CMAKE_PREFIX_PATH}"
-    else
-      export CMAKE_PREFIX_PATH="${PACK_ROOT}"
-    fi
-    ;;
-esac
+# Prefer SDL3_DIR / ZLIB_ROOT — never CMAKE_PREFIX_PATH=pack (libc++ / mingw include clash).
+if [[ -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3Config.cmake" ||
+      -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
+  export SDL3_DIR="${PACK_ROOT}/lib/cmake/SDL3"
+fi
 EOF
 chmod +x "${STAGE}/env.sh"
 
@@ -145,8 +138,8 @@ cmake --version
 clang --version
 \`\`\`
 
-\`env.bat\` / \`env.sh\` prepend \`bin\\\` to \`PATH\` and set \`CMAKE_PREFIX_PATH\` /
-\`ZLIB_ROOT\` to the pack root so CMake finds zlib and SDL3.
+\`env.bat\` / \`env.sh\` prepend \`bin\\\` to \`PATH\` and set \`ZLIB_ROOT\` /
+\`SDL3_DIR\` (not \`CMAKE_PREFIX_PATH\` — that breaks libc++ on this pack).
 
 Pack version: ${PACK_VERSION}
 

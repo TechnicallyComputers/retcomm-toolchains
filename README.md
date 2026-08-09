@@ -131,7 +131,7 @@ include/ zlib.h zconf.h             # Windows: static zlib for find_package(ZLIB
 include/SDL3/…                      # Linux + Windows: static SDL3 (1.0.7+)
 lib/libz.a                          # Windows
 lib/libSDL3.a  lib/cmake/SDL3/      # Linux + Windows (find_package(SDL3 CONFIG))
-env.sh                              # Windows also has env.bat (CMAKE_PREFIX_PATH + ZLIB_ROOT)
+env.sh                              # Windows also has env.bat (ZLIB_ROOT + SDL3_DIR)
 install.sh / uninstall.sh           # Unix zip root (PATH + shared cache)
 install.ps1 / uninstall.ps1         # Windows (+ install.bat / uninstall.bat)
 retcomm-toolchain.json
@@ -175,9 +175,11 @@ needs a newer dependency (e.g. prebuilt SDL3 in `1.0.7+`, embeddable Python in
 
 **1.0.7+** ships a pack-matched **static SDL3** (CMake CONFIG under
 `lib/cmake/SDL3`) so first-time game configures skip FetchContent’s hundreds of
-`Looking for …` try_compiles and the subsequent SDL compile. Clients should put
-the pack root on `CMAKE_PREFIX_PATH` (install/`env.sh` / toolchain activate
-already do).
+`Looking for …` try_compiles and the subsequent SDL compile. Clients should set
+`SDL3_DIR=<pack>/lib/cmake/SDL3` and `ZLIB_ROOT=<pack>` (install/`env.sh` /
+RetComM do). Do **not** put the Windows llvm-mingw pack root on
+`CMAKE_PREFIX_PATH` — that exposes mingw `include/math.h` ahead of libc++ and
+breaks C++ builds.
 
 Linux packs from **1.0.4** ship `libxml2.so.2` and default clang to
 `-fuse-ld=lld` (via `bin/clang.cfg`) so Release IPO/`-flto=thin` works without

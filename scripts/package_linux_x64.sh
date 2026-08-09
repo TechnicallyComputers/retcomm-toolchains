@@ -155,16 +155,11 @@ case " ${LDFLAGS:-} " in
 esac
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
-case ":${CMAKE_PREFIX_PATH:-}:" in
-  *":${PACK_ROOT}:"*) ;;
-  *)
-    if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then
-      export CMAKE_PREFIX_PATH="${PACK_ROOT}:${CMAKE_PREFIX_PATH}"
-    else
-      export CMAKE_PREFIX_PATH="${PACK_ROOT}"
-    fi
-    ;;
-esac
+# Prefer SDL3_DIR over CMAKE_PREFIX_PATH=pack (matches Windows / RetComM).
+if [[ -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3Config.cmake" ||
+      -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
+  export SDL3_DIR="${PACK_ROOT}/lib/cmake/SDL3"
+fi
 EOF
 chmod +x "${STAGE}/env.sh"
 
