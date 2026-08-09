@@ -133,12 +133,24 @@ Add-UserPathDir $binDir
 $env:RETCOMM_TOOLCHAIN_DIR = $latest
 
 # Session convenience (env.bat-equivalent bits for this process).
-# Do not set CMAKE_PREFIX_PATH to the pack root — mingw include/ breaks libc++.
-$env:ZLIB_ROOT = $latest
-$sdl3Cfg = Join-Path $latest "lib\cmake\SDL3\SDL3Config.cmake"
-$sdl3CfgAlt = Join-Path $latest "lib\cmake\SDL3\SDL3-config.cmake"
-if ((Test-Path -LiteralPath $sdl3Cfg) -or (Test-Path -LiteralPath $sdl3CfgAlt)) {
-    $env:SDL3_DIR = (Join-Path $latest "lib\cmake\SDL3")
+# Host libs live under deps/ (1.0.9+) — never pack-root CMAKE_PREFIX_PATH / ZLIB_ROOT.
+$deps = Join-Path $latest "deps"
+if (Test-Path -LiteralPath (Join-Path $deps "include\zlib.h")) {
+    $env:ZLIB_ROOT = $deps
+} elseif (Test-Path -LiteralPath (Join-Path $latest "include\zlib.h")) {
+    $env:ZLIB_ROOT = $latest
+}
+$sdl3Dir = $null
+foreach ($root in @($deps, $latest)) {
+    $sdl3Cfg = Join-Path $root "lib\cmake\SDL3\SDL3Config.cmake"
+    $sdl3CfgAlt = Join-Path $root "lib\cmake\SDL3\SDL3-config.cmake"
+    if ((Test-Path -LiteralPath $sdl3Cfg) -or (Test-Path -LiteralPath $sdl3CfgAlt)) {
+        $sdl3Dir = Join-Path $root "lib\cmake\SDL3"
+        break
+    }
+}
+if ($null -ne $sdl3Dir) {
+    $env:SDL3_DIR = $sdl3Dir
 }
 
 Write-Host ""

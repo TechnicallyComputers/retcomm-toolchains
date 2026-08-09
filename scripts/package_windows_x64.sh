@@ -62,14 +62,17 @@ set "CC=%PACK_ROOT%\bin\clang.exe"
 set "CXX=%PACK_ROOT%\bin\clang++.exe"
 set "AR=%PACK_ROOT%\bin\llvm-ar.exe"
 set "RANLIB=%PACK_ROOT%\bin\llvm-ranlib.exe"
-set "ZLIB_ROOT=%PACK_ROOT%"
 set "RETCOMM_TOOLCHAIN_DIR=%PACK_ROOT%"
 set "RETCOMM_PYTHON=%PACK_ROOT%\python\python.exe"
-rem Do not put PACK_ROOT on CMAKE_PREFIX_PATH — mingw include/ poisons libc++.
-if exist "%PACK_ROOT%\lib\cmake\SDL3\SDL3Config.cmake" (
-  set "SDL3_DIR=%PACK_ROOT%\lib\cmake\SDL3"
-) else if exist "%PACK_ROOT%\lib\cmake\SDL3\SDL3-config.cmake" (
-  set "SDL3_DIR=%PACK_ROOT%\lib\cmake\SDL3"
+rem Host deps live under deps/ — never ZLIB_ROOT/CMAKE_PREFIX_PATH=PACK_ROOT
+rem (mingw include/math.h poisons libc++).
+if exist "%PACK_ROOT%\deps\include\zlib.h" (
+  set "ZLIB_ROOT=%PACK_ROOT%\deps"
+)
+if exist "%PACK_ROOT%\deps\lib\cmake\SDL3\SDL3Config.cmake" (
+  set "SDL3_DIR=%PACK_ROOT%\deps\lib\cmake\SDL3"
+) else if exist "%PACK_ROOT%\deps\lib\cmake\SDL3\SDL3-config.cmake" (
+  set "SDL3_DIR=%PACK_ROOT%\deps\lib\cmake\SDL3"
 )
 EOF
 
@@ -89,13 +92,15 @@ export CC="${PACK_ROOT}/bin/clang.exe"
 export CXX="${PACK_ROOT}/bin/clang++.exe"
 export AR="${PACK_ROOT}/bin/llvm-ar.exe"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib.exe"
-export ZLIB_ROOT="${PACK_ROOT}"
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/python.exe"
-# Prefer SDL3_DIR / ZLIB_ROOT — never CMAKE_PREFIX_PATH=pack (libc++ / mingw include clash).
-if [[ -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3Config.cmake" ||
-      -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
-  export SDL3_DIR="${PACK_ROOT}/lib/cmake/SDL3"
+# deps/ only — never pack root on CMAKE_PREFIX_PATH / ZLIB_ROOT (libc++ clash).
+if [[ -f "${PACK_ROOT}/deps/include/zlib.h" ]]; then
+  export ZLIB_ROOT="${PACK_ROOT}/deps"
+fi
+if [[ -f "${PACK_ROOT}/deps/lib/cmake/SDL3/SDL3Config.cmake" ||
+      -f "${PACK_ROOT}/deps/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
+  export SDL3_DIR="${PACK_ROOT}/deps/lib/cmake/SDL3"
 fi
 EOF
 chmod +x "${STAGE}/env.sh"
@@ -108,8 +113,8 @@ Self-contained Windows toolchain for RetComM / psxrecomp local builds:
 - llvm-mingw ${LLVM_MINGW_TAG} (LLVM/Clang/LLD + mingw-w64 **UCRT** sysroot)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
-- zlib ${ZLIB_VERSION} (static \`libz.a\` + headers for \`find_package(ZLIB)\`)
-- SDL3 ${SDL3_VERSION} (static \`libSDL3.a\` + CMake CONFIG for \`find_package(SDL3)\`)
+- zlib ${ZLIB_VERSION} + SDL3 ${SDL3_VERSION} under \`deps/\` (keeps mingw
+  \`include/\` off the C++ compile line — required for libc++)
 - CPython ${PYTHON_VERSION} (python-build-standalone; no Store alias / system install)
 
 No Visual Studio install required. Targets Windows 10+ (UCRT).
@@ -138,8 +143,8 @@ cmake --version
 clang --version
 \`\`\`
 
-\`env.bat\` / \`env.sh\` prepend \`bin\\\` to \`PATH\` and set \`ZLIB_ROOT\` /
-\`SDL3_DIR\` (not \`CMAKE_PREFIX_PATH\` — that breaks libc++ on this pack).
+\`env.bat\` / \`env.sh\` prepend \`bin\\\` to \`PATH\` and set
+\`ZLIB_ROOT=%PACK_ROOT%\\deps\` / \`SDL3_DIR=…\\deps\\lib\\cmake\\SDL3\`.
 
 Pack version: ${PACK_VERSION}
 
@@ -156,13 +161,13 @@ stage_bundle_scripts "$STAGE" windows
 [[ -f "${STAGE}/bin/ninja.exe" ]]
 [[ -f "${STAGE}/bin/x86_64-w64-mingw32-clang.exe" ]] || \
   [[ -f "${STAGE}/bin/clang.exe" ]]
-[[ -f "${STAGE}/include/zlib.h" ]]
-[[ -f "${STAGE}/lib/libz.a" ]]
+[[ -f "${STAGE}/deps/include/zlib.h" ]]
+[[ -f "${STAGE}/deps/lib/libz.a" ]]
 [[ -f "${STAGE}/x86_64-w64-mingw32/lib/libz.a" ]]
-[[ -f "${STAGE}/lib/libSDL3.a" ]]
-[[ -f "${STAGE}/lib/cmake/SDL3/SDL3Config.cmake" ]] || \
-  [[ -f "${STAGE}/lib/cmake/SDL3/SDL3-config.cmake" ]]
-[[ -d "${STAGE}/include/SDL3" ]]
+[[ -f "${STAGE}/deps/lib/libSDL3.a" ]]
+[[ -f "${STAGE}/deps/lib/cmake/SDL3/SDL3Config.cmake" ]] || \
+  [[ -f "${STAGE}/deps/lib/cmake/SDL3/SDL3-config.cmake" ]]
+[[ -d "${STAGE}/deps/include/SDL3" ]]
 [[ -f "${STAGE}/python/python.exe" ]]
 [[ -f "${STAGE}/install.ps1" ]]
 [[ -f "${STAGE}/uninstall.ps1" ]]

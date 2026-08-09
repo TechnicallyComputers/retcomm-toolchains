@@ -155,10 +155,9 @@ case " ${LDFLAGS:-} " in
 esac
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
-# Prefer SDL3_DIR over CMAKE_PREFIX_PATH=pack (matches Windows / RetComM).
-if [[ -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3Config.cmake" ||
-      -f "${PACK_ROOT}/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
-  export SDL3_DIR="${PACK_ROOT}/lib/cmake/SDL3"
+if [[ -f "${PACK_ROOT}/deps/lib/cmake/SDL3/SDL3Config.cmake" ||
+      -f "${PACK_ROOT}/deps/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
+  export SDL3_DIR="${PACK_ROOT}/deps/lib/cmake/SDL3"
 fi
 EOF
 chmod +x "${STAGE}/env.sh"
@@ -174,7 +173,7 @@ Portable RetComM / psxrecomp toolchain pack:
 - \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld\` (Release LTO / IPO without LLVMgold)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
-- SDL3 ${SDL3_VERSION} (static \`libSDL3.a\` + CMake CONFIG for \`find_package(SDL3)\`)
+- SDL3 ${SDL3_VERSION} under \`deps/\` (static \`libSDL3.a\` + CMake CONFIG)
 - CPython ${PYTHON_VERSION} (python-build-standalone; no system Python required)
 
 ## Install (recommended)
@@ -218,10 +217,10 @@ stage_bundle_scripts "$STAGE" unix
 [[ -x "${STAGE}/install.sh" ]]
 [[ -x "${STAGE}/uninstall.sh" ]]
 [[ -x "${STAGE}/python/bin/python3" ]]
-[[ -f "${STAGE}/lib/libSDL3.a" ]]
-[[ -f "${STAGE}/lib/cmake/SDL3/SDL3Config.cmake" ]] || \
-  [[ -f "${STAGE}/lib/cmake/SDL3/SDL3-config.cmake" ]]
-[[ -d "${STAGE}/include/SDL3" ]]
+[[ -f "${STAGE}/deps/lib/libSDL3.a" ]]
+[[ -f "${STAGE}/deps/lib/cmake/SDL3/SDL3Config.cmake" ]] || \
+  [[ -f "${STAGE}/deps/lib/cmake/SDL3/SDL3-config.cmake" ]]
+[[ -d "${STAGE}/deps/include/SDL3" ]]
 export PATH="${STAGE}/bin:${PATH}"
 # Prove RUNPATH/$ORIGIN without ambient LD_LIBRARY_PATH (wizard often only
 # prepends bin/ to PATH; env.sh still sets LD_LIBRARY_PATH as a belt).

@@ -127,11 +127,9 @@ Layout (client contract):
 ```
 bin/cmake  bin/ninja  bin/clang …   # compilers vary by OS
 python/                             # CPython (PBS); Windows: python.exe, Unix: bin/python3
-include/ zlib.h zconf.h             # Windows: static zlib for find_package(ZLIB)
-include/SDL3/…                      # Linux + Windows: static SDL3 (1.0.7+)
-lib/libz.a                          # Windows
-lib/libSDL3.a  lib/cmake/SDL3/      # Linux + Windows (find_package(SDL3 CONFIG))
-env.sh                              # Windows also has env.bat (ZLIB_ROOT + SDL3_DIR)
+deps/include/ zlib.h + SDL3/…       # 1.0.9+: host libs (not mingw include/)
+deps/lib/ libz.a libSDL3.a cmake/SDL3/
+env.sh                              # Windows also has env.bat (ZLIB_ROOT + SDL3_DIR → deps/)
 install.sh / uninstall.sh           # Unix zip root (PATH + shared cache)
 install.ps1 / uninstall.ps1         # Windows (+ install.bat / uninstall.bat)
 retcomm-toolchain.json
@@ -169,17 +167,20 @@ Point title `build.toolchain` at this repo:
 ```
 
 Omit `min_version` when any cached usable pack is fine. Raise it when a title
-needs a newer dependency (e.g. prebuilt SDL3 in `1.0.7+`, embeddable Python in
-`1.0.6+`, Linux ICU 70 in `1.0.5+`, LTO/`libxml2` in `1.0.4+`, Windows zlib in
-`1.0.3+`).
+needs a newer dependency (e.g. `deps/` layout in `1.0.9+`, prebuilt SDL3 in
+`1.0.7+`, embeddable Python in `1.0.6+`, Linux ICU 70 in `1.0.5+`,
+LTO/`libxml2` in `1.0.4+`, Windows zlib in `1.0.3+`).
 
-**1.0.7+** ships a pack-matched **static SDL3** (CMake CONFIG under
-`lib/cmake/SDL3`) so first-time game configures skip FetchContent’s hundreds of
-`Looking for …` try_compiles and the subsequent SDL compile. Clients should set
-`SDL3_DIR=<pack>/lib/cmake/SDL3` and `ZLIB_ROOT=<pack>` (install/`env.sh` /
-RetComM do). Do **not** put the Windows llvm-mingw pack root on
-`CMAKE_PREFIX_PATH` — that exposes mingw `include/math.h` ahead of libc++ and
-breaks C++ builds.
+**1.0.9+** installs zlib + SDL3 under **`deps/`** so `find_package` never
+`-isystem`s the Windows llvm-mingw top-level `include/` (which poisons libc++
+`<cmath>` / `<cwchar>`). Clients set `ZLIB_ROOT=<pack>/deps` and
+`SDL3_DIR=<pack>/deps/lib/cmake/SDL3`. Do **not** put the pack root on
+`CMAKE_PREFIX_PATH` or `ZLIB_ROOT`.
+
+**1.0.7–1.0.8** shipped the same static SDL3 at pack-root `lib/cmake/SDL3`
+(and Windows zlib at pack-root `include/`). Those packs skip FetchContent’s
+hundreds of `Looking for …` probes, but Windows C++ titles should upgrade to
+`1.0.9+` for the `deps/` split.
 
 Linux packs from **1.0.4** ship `libxml2.so.2` and default clang to
 `-fuse-ld=lld` (via `bin/clang.cfg`) so Release IPO/`-flto=thin` works without

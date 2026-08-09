@@ -252,9 +252,11 @@ stage_ninja() {
 }
 
 # Cross-build static zlib into a Windows llvm-mingw stage (run on Linux).
-# Installs headers + libz.a under stage/{include,lib} and the x86_64 sysroot.
+# Installs under stage/deps/ (NOT stage/include — that mingw tree poisons libc++
+# when used as ZLIB_ROOT / CMAKE_PREFIX_PATH). Also mirrors into the sysroot.
 stage_zlib_mingw_windows() {
   local stage="$1"
+  local deps="${stage}/deps"
   local zlib_ver="${ZLIB_VERSION:?ZLIB_VERSION unset}"
   local linux_asset="${LLVM_MINGW_LINUX_ASSET:?LLVM_MINGW_LINUX_ASSET unset}"
   local zlib_url="https://github.com/madler/zlib/releases/download/v${zlib_ver}/zlib-${zlib_ver}.tar.gz"
@@ -311,14 +313,15 @@ stage_zlib_mingw_windows() {
     exit 1
   fi
 
-  mkdir -p "${stage}/include" "${stage}/lib" \
+  mkdir -p "${deps}/include" "${deps}/lib" \
     "${stage}/x86_64-w64-mingw32/include" "${stage}/x86_64-w64-mingw32/lib"
-  cp -a "${zsrc}/zlib.h" "${zsrc}/zconf.h" "${stage}/include/"
+  cp -a "${zsrc}/zlib.h" "${zsrc}/zconf.h" "${deps}/include/"
+  cp -a "${zsrc}/libz.a" "${deps}/lib/libz.a"
+  # Sysroot only (compiler -isystem); never stage/include next to mingw math.h.
   cp -a "${zsrc}/zlib.h" "${zsrc}/zconf.h" "${stage}/x86_64-w64-mingw32/include/"
-  cp -a "${zsrc}/libz.a" "${stage}/lib/libz.a"
   cp -a "${zsrc}/libz.a" "${stage}/x86_64-w64-mingw32/lib/libz.a"
   rm -rf "$xtmp" "$ztmp"
-  echo "staged zlib ${zlib_ver} -> include/ + lib/libz.a (+ x86_64 sysroot)"
+  echo "staged zlib ${zlib_ver} -> deps/{include,lib} (+ x86_64 sysroot)"
 }
 
 # Verify a downloaded SDL3 tarball matches the pin (optional if sha256sum missing).
@@ -337,11 +340,13 @@ _verify_sdl3_sha256() {
 }
 
 # Cross-build static SDL3 into a Windows llvm-mingw stage (run on Linux).
-# Installs headers + libSDL3.a + CMake CONFIG under stage/ for find_package(SDL3).
+# Installs under stage/deps/ so find_package(SDL3) does not -isystem the mingw
+# top-level include/ (breaks libc++ <cmath>/<cwchar> on Windows packs).
 stage_sdl3_mingw_windows() {
   local stage_in="$1"
   local stage
   stage="$(cd "$stage_in" && pwd)"
+  local deps="${stage}/deps"
   local sdl_ver="${SDL3_VERSION:?SDL3_VERSION unset}"
   local linux_asset="${LLVM_MINGW_LINUX_ASSET:?LLVM_MINGW_LINUX_ASSET unset}"
   local sdl_url="${SDL3_URL:?SDL3_URL unset}"
@@ -380,8 +385,8 @@ stage_sdl3_mingw_windows() {
   fi
 
   local sbuild="${stmp}/build-mingw"
-  mkdir -p "$sbuild"
-  echo "cross-building SDL3 ${sdl_ver} (static, llvm-mingw)…"
+  mkdir -p "$sbuild" "$deps"
+  echo "cross-building SDL3 ${sdl_ver} (static, llvm-mingw → deps/)…"
   if ! cmake -S "$ssrc" -B "$sbuild" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_SYSTEM_NAME=Windows \
@@ -391,7 +396,7 @@ stage_sdl3_mingw_windows() {
     -DCMAKE_RC_COMPILER="${xroot}/bin/llvm-windres" \
     -DCMAKE_AR="${xroot}/bin/llvm-ar" \
     -DCMAKE_RANLIB="${xroot}/bin/llvm-ranlib" \
-    -DCMAKE_INSTALL_PREFIX="${stage}" \
+    -DCMAKE_INSTALL_PREFIX="${deps}" \
     -DSDL_SHARED=OFF \
     -DSDL_STATIC=ON \
     -DSDL_TEST_LIBRARY=OFF \
@@ -413,29 +418,29 @@ stage_sdl3_mingw_windows() {
     exit 1
   fi
 
-  # Mirror into the mingw sysroot so bare sysroot searches also work.
+  # Optional sysroot mirror for bare -isystem sysroot searches.
   mkdir -p "${stage}/x86_64-w64-mingw32/include" "${stage}/x86_64-w64-mingw32/lib/cmake"
-  if [[ -d "${stage}/include/SDL3" ]]; then
-    cp -a "${stage}/include/SDL3" "${stage}/x86_64-w64-mingw32/include/"
+  if [[ -d "${deps}/include/SDL3" ]]; then
+    cp -a "${deps}/include/SDL3" "${stage}/x86_64-w64-mingw32/include/"
   fi
-  if [[ -f "${stage}/lib/libSDL3.a" ]]; then
-    cp -a "${stage}/lib/libSDL3.a" "${stage}/x86_64-w64-mingw32/lib/"
+  if [[ -f "${deps}/lib/libSDL3.a" ]]; then
+    cp -a "${deps}/lib/libSDL3.a" "${stage}/x86_64-w64-mingw32/lib/"
   fi
-  if [[ -d "${stage}/lib/cmake/SDL3" ]]; then
-    cp -a "${stage}/lib/cmake/SDL3" "${stage}/x86_64-w64-mingw32/lib/cmake/"
+  if [[ -d "${deps}/lib/cmake/SDL3" ]]; then
+    cp -a "${deps}/lib/cmake/SDL3" "${stage}/x86_64-w64-mingw32/lib/cmake/"
   fi
 
   rm -rf "$xtmp" "$stmp"
-  if [[ ! -f "${stage}/lib/cmake/SDL3/SDL3Config.cmake" && \
-        ! -f "${stage}/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
+  if [[ ! -f "${deps}/lib/cmake/SDL3/SDL3Config.cmake" && \
+        ! -f "${deps}/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
     echo "SDL3 CMake package missing after install" >&2
     exit 1
   fi
-  if [[ ! -f "${stage}/lib/libSDL3.a" ]]; then
+  if [[ ! -f "${deps}/lib/libSDL3.a" ]]; then
     echo "SDL3 static library missing after install" >&2
     exit 1
   fi
-  echo "staged SDL3 ${sdl_ver} -> include/SDL3 + lib/libSDL3.a + lib/cmake/SDL3"
+  echo "staged SDL3 ${sdl_ver} -> deps/{include/SDL3,lib/libSDL3.a,lib/cmake/SDL3}"
 }
 
 # Native-build static SDL3 into a Linux clang stage (needs host X11/ALSA headers).
@@ -483,7 +488,7 @@ stage_sdl3_linux() {
     -DCMAKE_CXX_COMPILER="$cxx" \
     -DCMAKE_AR="$ar" \
     -DCMAKE_RANLIB="$ranlib" \
-    -DCMAKE_INSTALL_PREFIX="$stage" \
+    -DCMAKE_INSTALL_PREFIX="${stage}/deps" \
     -DSDL_SHARED=OFF \
     -DSDL_STATIC=ON \
     -DSDL_TEST_LIBRARY=OFF \
@@ -505,11 +510,11 @@ stage_sdl3_linux() {
     exit 1
   fi
   rm -rf "$stmp"
-  if [[ ! -f "${stage}/lib/libSDL3.a" ]]; then
+  if [[ ! -f "${stage}/deps/lib/libSDL3.a" ]]; then
     echo "SDL3 static library missing after install" >&2
     exit 1
   fi
-  echo "staged SDL3 ${sdl_ver} -> include/SDL3 + lib/libSDL3.a + lib/cmake/SDL3"
+  echo "staged SDL3 ${sdl_ver} -> deps/{include/SDL3,lib/libSDL3.a,lib/cmake/SDL3}"
 }
 
 # Copy self-install / uninstall helpers into the pack stage (zip root).
