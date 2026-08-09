@@ -339,7 +339,9 @@ _verify_sdl3_sha256() {
 # Cross-build static SDL3 into a Windows llvm-mingw stage (run on Linux).
 # Installs headers + libSDL3.a + CMake CONFIG under stage/ for find_package(SDL3).
 stage_sdl3_mingw_windows() {
-  local stage="$1"
+  local stage_in="$1"
+  local stage
+  stage="$(cd "$stage_in" && pwd)"
   local sdl_ver="${SDL3_VERSION:?SDL3_VERSION unset}"
   local linux_asset="${LLVM_MINGW_LINUX_ASSET:?LLVM_MINGW_LINUX_ASSET unset}"
   local sdl_url="${SDL3_URL:?SDL3_URL unset}"
@@ -438,16 +440,22 @@ stage_sdl3_mingw_windows() {
 
 # Native-build static SDL3 into a Linux clang stage (needs host X11/ALSA headers).
 stage_sdl3_linux() {
-  local stage="$1"
+  local stage_in="$1"
+  local stage
+  stage="$(cd "$stage_in" && pwd)"
   local sdl_ver="${SDL3_VERSION:?SDL3_VERSION unset}"
   local sdl_url="${SDL3_URL:?SDL3_URL unset}"
   local sdl_arc="${CACHE}/${SDL3_TARBALL:?SDL3_TARBALL unset}"
+  local cc="${stage}/bin/clang"
+  local cxx="${stage}/bin/clang++"
+  local ar="${stage}/bin/llvm-ar"
+  local ranlib="${stage}/bin/llvm-ranlib"
 
   need cmake
   need ninja
   need tar
-  [[ -x "${stage}/bin/clang" ]] || {
-    echo "stage_sdl3_linux: stage clang missing" >&2
+  [[ -x "$cc" ]] || {
+    echo "stage_sdl3_linux: stage clang missing ($cc)" >&2
     exit 1
   }
   download "$sdl_url" "$sdl_arc"
@@ -467,13 +475,15 @@ stage_sdl3_linux() {
   local sbuild="${stmp}/build-linux"
   mkdir -p "$sbuild"
   echo "building SDL3 ${sdl_ver} (static, pack clang)…"
+  # Absolute compiler paths required — CMake rejects relative CMAKE_C_COMPILER
+  # when the tool is not already on PATH (CI pack stages are relative).
   if ! cmake -S "$ssrc" -B "$sbuild" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER="${stage}/bin/clang" \
-    -DCMAKE_CXX_COMPILER="${stage}/bin/clang++" \
-    -DCMAKE_AR="${stage}/bin/llvm-ar" \
-    -DCMAKE_RANLIB="${stage}/bin/llvm-ranlib" \
-    -DCMAKE_INSTALL_PREFIX="${stage}" \
+    -DCMAKE_C_COMPILER="$cc" \
+    -DCMAKE_CXX_COMPILER="$cxx" \
+    -DCMAKE_AR="$ar" \
+    -DCMAKE_RANLIB="$ranlib" \
+    -DCMAKE_INSTALL_PREFIX="$stage" \
     -DSDL_SHARED=OFF \
     -DSDL_STATIC=ON \
     -DSDL_TEST_LIBRARY=OFF \
