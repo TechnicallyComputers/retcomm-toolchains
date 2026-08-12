@@ -35,6 +35,7 @@ write_meta() {
   "pins": {
     "cmake": "${CMAKE_VERSION}",
     "ninja": "${NINJA_VERSION}",
+    "ccache": "${CCACHE_VERSION:-}",
     "llvm": "${LLVM_VERSION}",
     "llvm_mingw": "${LLVM_MINGW_TAG}",
     "zlib": "${ZLIB_VERSION:-}",
@@ -249,6 +250,46 @@ stage_ninja() {
   cp -a "$ninja_bin" "${stage}/bin/${exe_name}"
   chmod +x "${stage}/bin/${exe_name}" 2>/dev/null || true
   rm -rf "$tmp"
+}
+
+# Stage official ccache prebuilt into stage/bin/.
+# $1 = archive path, $2 = stage root, $3 = dest name: ccache | ccache.exe
+# $4 = archive kind: tar.xz | tar.gz | zip
+stage_ccache() {
+  local archive="$1" stage="$2" exe_name="$3" kind="$4"
+  local tmp
+  tmp="$(mktemp -d)"
+  case "$kind" in
+    tar.xz)
+      need tar
+      tar --no-same-owner -xJf "$archive" -C "$tmp"
+      ;;
+    tar.gz)
+      need tar
+      tar --no-same-owner -xzf "$archive" -C "$tmp"
+      ;;
+    zip)
+      need unzip
+      unzip -q "$archive" -d "$tmp"
+      ;;
+    *)
+      rm -rf "$tmp"
+      echo "stage_ccache: unknown kind $kind" >&2
+      exit 1
+      ;;
+  esac
+  local ccache_bin
+  ccache_bin="$(find "$tmp" -type f \( -name ccache -o -name ccache.exe \) | head -1)"
+  [[ -n "$ccache_bin" ]] || {
+    rm -rf "$tmp"
+    echo "ccache missing in $archive" >&2
+    exit 1
+  }
+  mkdir -p "${stage}/bin"
+  cp -a "$ccache_bin" "${stage}/bin/${exe_name}"
+  chmod +x "${stage}/bin/${exe_name}" 2>/dev/null || true
+  rm -rf "$tmp"
+  echo "staged ccache → ${stage}/bin/${exe_name}"
 }
 
 # Cross-build static zlib into a Windows llvm-mingw stage (run on Linux).

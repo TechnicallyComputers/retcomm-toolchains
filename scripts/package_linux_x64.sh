@@ -19,16 +19,20 @@ ZIP="${OUT}/${PACK_ID}-${OS_TAG}.zip"
 
 CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
 NINJA_URL="https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip"
+CCACHE_ASSET="ccache-${CCACHE_VERSION}-linux-x86_64-musl-static.tar.xz"
+CCACHE_URL="https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${CCACHE_ASSET}"
 LLVM_URL="https://github.com/llvm/llvm-project/releases/download/${LLVM_TAG}/${LLVM_LINUX_ASSET}"
 
 CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
 NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-linux.zip"
+CCACHE_ARC="${CACHE}/${CCACHE_ASSET}"
 LLVM_ARC="${CACHE}/${LLVM_LINUX_ASSET}"
 LIBXML2_ARC="${CACHE}/${LIBXML2_DEB_ASSET}"
 LIBICU70_ARC="${CACHE}/${LIBICU70_DEB_ASSET}"
 
 download "$CMAKE_URL" "$CMAKE_ARC"
 download "$NINJA_URL" "$NINJA_ARC"
+download "$CCACHE_URL" "$CCACHE_ARC"
 download "$LLVM_URL" "$LLVM_ARC"
 download "${LIBXML2_DEB_URL}" "$LIBXML2_ARC"
 download "${LIBICU70_DEB_URL}" "$LIBICU70_ARC"
@@ -125,6 +129,7 @@ printf '%s\n' '-fuse-ld=lld' >"${STAGE}/bin/clang++.cfg"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
+stage_ccache "$CCACHE_ARC" "$STAGE" ccache tar.xz
 stage_sdl3_linux "$STAGE"
 stage_python_standalone "$STAGE" "x86_64-unknown-linux-gnu"
 
@@ -173,6 +178,7 @@ Portable RetComM / psxrecomp toolchain pack:
 - \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld\` (Release LTO / IPO without LLVMgold)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
+- ccache ${CCACHE_VERSION} (compiler cache; speeds cold/rebuild after path moves)
 - SDL3 ${SDL3_VERSION} under \`deps/\` (static \`libSDL3.a\` + CMake CONFIG)
 - CPython ${PYTHON_VERSION} (python-build-standalone; no system Python required)
 
@@ -228,8 +234,10 @@ unset LD_LIBRARY_PATH || true
 "${STAGE}/bin/cmake" --version | head -1
 "${STAGE}/bin/clang" --version | head -1
 "${STAGE}/bin/ninja" --version
+"${STAGE}/bin/ccache" --version | head -1
 "${STAGE}/bin/ld.lld" --version | head -1
 "${STAGE}/python/bin/python3" -c 'import sys; print(sys.version)'
+[[ -x "${STAGE}/bin/ccache" ]]
 # libicuuc is a NEEDED of bundled libxml2 — must resolve via libxml2's $ORIGIN.
 XML_ICU="$(ldd "${STAGE}/lib/libxml2.so.2" \
   | awk '/libicuuc\.so\.70/{print $3; exit}')"

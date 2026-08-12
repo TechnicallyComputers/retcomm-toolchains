@@ -20,18 +20,23 @@ ZIP="${OUT}/${PACK_ID}-${OS_TAG}.zip"
 
 CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-macos-universal.tar.gz"
 NINJA_URL="https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-mac.zip"
+CCACHE_ASSET="ccache-${CCACHE_VERSION}-darwin.tar.gz"
+CCACHE_URL="https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${CCACHE_ASSET}"
 
 CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-macos-universal.tar.gz"
 NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-mac.zip"
+CCACHE_ARC="${CACHE}/${CCACHE_ASSET}"
 
 download "$CMAKE_URL" "$CMAKE_ARC"
 download "$NINJA_URL" "$NINJA_ARC"
+download "$CCACHE_URL" "$CCACHE_ARC"
 
 rm -rf "$STAGE"
 mkdir -p "${STAGE}/bin" "${OUT}"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" macos
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
+stage_ccache "$CCACHE_ARC" "$STAGE" ccache tar.gz
 stage_python_macos_universal "$STAGE"
 
 cat >"${STAGE}/env.sh" <<'EOF'
@@ -62,6 +67,7 @@ macOS RetComM toolchain helpers:
 
 - CMake ${CMAKE_VERSION} (universal)
 - Ninja ${NINJA_VERSION}
+- ccache ${CCACHE_VERSION} (universal Darwin binary)
 - CPython ${PYTHON_VERSION} (python-build-standalone, arm64 + x86_64)
 
 **Apple Clang + Xcode Command Line Tools are required** (system SDK). This pack
@@ -104,6 +110,7 @@ stage_bundle_scripts "$STAGE" unix
 
 [[ -x "${STAGE}/bin/cmake" ]]
 [[ -x "${STAGE}/bin/ninja" ]]
+[[ -x "${STAGE}/bin/ccache" ]]
 [[ -x "${STAGE}/python/bin/python3" ]]
 [[ -x "${STAGE}/python/aarch64-apple-darwin/bin/python3" ]]
 [[ -x "${STAGE}/python/x86_64-apple-darwin/bin/python3" ]]

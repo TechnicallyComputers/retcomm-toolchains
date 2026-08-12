@@ -18,14 +18,18 @@ ZIP="${OUT}/${PACK_ID}-${OS_TAG}.zip"
 
 CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-windows-x86_64.zip"
 NINJA_URL="https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-win.zip"
+CCACHE_ASSET="ccache-${CCACHE_VERSION}-windows-x86_64.zip"
+CCACHE_URL="https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${CCACHE_ASSET}"
 MINGW_URL="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_TAG}/${LLVM_MINGW_ASSET}"
 
 CMAKE_ARC="${CACHE}/cmake-${CMAKE_VERSION}-windows-x86_64.zip"
 NINJA_ARC="${CACHE}/ninja-${NINJA_VERSION}-win.zip"
+CCACHE_ARC="${CACHE}/${CCACHE_ASSET}"
 MINGW_ARC="${CACHE}/${LLVM_MINGW_ASSET}"
 
 download "$CMAKE_URL" "$CMAKE_ARC"
 download "$NINJA_URL" "$NINJA_ARC"
+download "$CCACHE_URL" "$CCACHE_ARC"
 download "$MINGW_URL" "$MINGW_ARC"
 
 rm -rf "$STAGE"
@@ -46,6 +50,7 @@ rm -rf "$MINGW_TMP"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" windows
 stage_ninja "$NINJA_ARC" "$STAGE" ninja.exe
+stage_ccache "$CCACHE_ARC" "$STAGE" ccache.exe zip
 stage_zlib_mingw_windows "$STAGE"
 stage_sdl3_mingw_windows "$STAGE"
 stage_python_standalone "$STAGE" "x86_64-pc-windows-msvc"
@@ -113,6 +118,7 @@ Self-contained Windows toolchain for RetComM / psxrecomp local builds:
 - llvm-mingw ${LLVM_MINGW_TAG} (LLVM/Clang/LLD + mingw-w64 **UCRT** sysroot)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
+- ccache ${CCACHE_VERSION}
 - zlib ${ZLIB_VERSION} + SDL3 ${SDL3_VERSION} under \`deps/\` (keeps mingw
   \`include/\` off the C++ compile line — required for libc++)
 - CPython ${PYTHON_VERSION} (python-build-standalone; no Store alias / system install)
@@ -159,6 +165,7 @@ stage_bundle_scripts "$STAGE" windows
 [[ -f "${STAGE}/bin/clang++.exe" ]]
 [[ -f "${STAGE}/bin/cmake.exe" ]]
 [[ -f "${STAGE}/bin/ninja.exe" ]]
+[[ -f "${STAGE}/bin/ccache.exe" ]]
 [[ -f "${STAGE}/bin/x86_64-w64-mingw32-clang.exe" ]] || \
   [[ -f "${STAGE}/bin/clang.exe" ]]
 [[ -f "${STAGE}/deps/include/zlib.h" ]]

@@ -21,6 +21,13 @@ Copyright (c) Google Inc. and others
 Apache License 2.0
 https://github.com/ninja-build/ninja
 
+### ccache
+Copyright (C) Andrew Tridgell, Joel Rosdahl, and contributors
+GPL-3.0-or-later
+Official prebuilt binaries (Linux musl-static / Windows / Darwin) under bin/
+https://ccache.dev/
+https://github.com/ccache/ccache
+
 ### zlib (Windows packs)
 Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler
 zlib License

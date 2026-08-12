@@ -118,14 +118,14 @@ not in per-game `game.toml`.
 
 | Asset | Contents |
 |-------|----------|
-| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja, static SDL3, embeddable CPython |
-| `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + static zlib + static SDL3 + embeddable CPython |
-| `cmake-clang-v1-macos-universal.zip` | CMake + Ninja + embeddable CPython (arm64+x64); **requires Xcode CLT** (system clang); SDL3 via FetchContent / system |
+| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja, ccache, static SDL3, embeddable CPython |
+| `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + ccache + static zlib + static SDL3 + embeddable CPython |
+| `cmake-clang-v1-macos-universal.zip` | CMake + Ninja + ccache + embeddable CPython (arm64+x64); **requires Xcode CLT** (system clang); SDL3 via FetchContent / system |
 
 Layout (client contract):
 
 ```
-bin/cmake  bin/ninja  bin/clang …   # compilers vary by OS
+bin/cmake  bin/ninja  bin/ccache  bin/clang …   # compilers vary by OS
 python/                             # CPython (PBS); Windows: python.exe, Unix: bin/python3
 deps/include/ zlib.h + SDL3/…       # 1.0.9+: host libs (not mingw include/)
 deps/lib/ libz.a libSDL3.a cmake/SDL3/
