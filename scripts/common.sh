@@ -484,6 +484,188 @@ stage_sdl3_mingw_windows() {
   echo "staged SDL3 ${sdl_ver} -> deps/{include/SDL3,lib/libSDL3.a,lib/cmake/SDL3}"
 }
 
+# Extract an Ubuntu .deb's data.tar into stage/sysroot/ (merge usr/ + lib/).
+# Used to assemble a jammy build sysroot for SteamOS / headerless hosts.
+stage_deb_into_sysroot() {
+  local deb="$1" stage="$2"
+  [[ -f "$deb" ]] || { echo "deb missing: $deb" >&2; exit 1; }
+  local tmp
+  tmp="$(mktemp -d)"
+  (
+    cd "$tmp"
+    ar x "$deb"
+    if [[ -f data.tar.xz ]]; then
+      tar --no-same-owner -xJf data.tar.xz
+    elif [[ -f data.tar.zst ]]; then
+      tar --no-same-owner --zstd -xf data.tar.zst
+    elif [[ -f data.tar.gz ]]; then
+      tar --no-same-owner -xzf data.tar.gz
+    else
+      echo "deb missing data.tar.* in $deb" >&2
+      exit 1
+    fi
+  )
+  mkdir -p "${stage}/sysroot"
+  # Preserve multiarch layout (usr/include, usr/lib/x86_64-linux-gnu, lib/…).
+  if [[ -d "${tmp}/usr" ]]; then
+    mkdir -p "${stage}/sysroot/usr"
+    cp -a "${tmp}/usr/." "${stage}/sysroot/usr/"
+  fi
+  if [[ -d "${tmp}/lib" ]]; then
+    mkdir -p "${stage}/sysroot/lib"
+    cp -a "${tmp}/lib/." "${stage}/sysroot/lib/"
+  fi
+  rm -rf "$tmp"
+  echo "sysroot ← $(basename "$deb")"
+}
+
+# Ubuntu jammy amd64 build sysroot: glibc + linux uapi + libstdc++ + OpenGL.
+# Also stages zlib headers/static lib into deps/ for ZLIB_ROOT (like Windows).
+stage_linux_sysroot() {
+  local stage="$1"
+  local -a urls=(
+    "${SYSROOT_LIBC6_URL:?}"
+    "${SYSROOT_LIBC6_DEV_URL:?}"
+    "${SYSROOT_LINUX_LIBC_DEV_URL:?}"
+    "${SYSROOT_LIBGCC_S1_URL:?}"
+    "${SYSROOT_LIBSTDCPP6_URL:?}"
+    "${SYSROOT_LIBSTDCPP_DEV_URL:?}"
+    "${SYSROOT_LIBGLVND0_URL:?}"
+    "${SYSROOT_LIBGL1_URL:?}"
+    "${SYSROOT_LIBGLX0_URL:?}"
+    "${SYSROOT_LIBGLVND_DEV_URL:?}"
+    "${SYSROOT_LIBGL_DEV_URL:?}"
+    "${SYSROOT_ZLIB1G_URL:?}"
+    "${SYSROOT_ZLIB1G_DEV_URL:?}"
+  )
+  local url arc
+  echo "assembling Linux build sysroot (Ubuntu jammy amd64)…"
+  for url in "${urls[@]}"; do
+    arc="${CACHE}/$(basename "$url")"
+    download "$url" "$arc"
+    stage_deb_into_sysroot "$arc" "$stage"
+  done
+
+  # Sanity: headers + CRT objects the clang driver needs under --sysroot.
+  local sr="${stage}/sysroot"
+  [[ -f "${sr}/usr/include/unistd.h" || -f "${sr}/usr/include/x86_64-linux-gnu/unistd.h" ]] || {
+    echo "sysroot missing unistd.h" >&2
+    exit 1
+  }
+  # Ubuntu multiarch: sys/types.h lives under usr/include/<triplet>/sys/
+  # (clang --sysroot adds that dir to the include path).
+  [[ -f "${sr}/usr/include/sys/types.h" \
+    || -f "${sr}/usr/include/x86_64-linux-gnu/sys/types.h" ]] || {
+    echo "sysroot missing sys/types.h" >&2
+    exit 1
+  }
+  [[ -f "${sr}/usr/include/GL/gl.h" ]] || {
+    echo "sysroot missing GL/gl.h" >&2
+    exit 1
+  }
+  # libstdc++ multiarch include root (versioned).
+  local cxxinc
+  cxxinc="$(find "${sr}/usr/include/c++" -mindepth 1 -maxdepth 1 -type d | head -1 || true)"
+  [[ -n "$cxxinc" && -f "${cxxinc}/cstdio" ]] || {
+    echo "sysroot missing libstdc++ headers under usr/include/c++" >&2
+    exit 1
+  }
+  local crt
+  crt="$(find "${sr}/usr/lib" -name 'Scrt1.o' | head -1 || true)"
+  [[ -n "$crt" ]] || {
+    echo "sysroot missing Scrt1.o (libc6-dev)" >&2
+    exit 1
+  }
+
+  # Ubuntu libc.so linker script references /lib64/ld-linux-x86-64.so.2; the
+  # libc6 deb only installs the loader under lib/x86_64-linux-gnu/.
+  mkdir -p "${sr}/lib64"
+  if [[ -e "${sr}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2" ]]; then
+    ln -sfn ../lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
+      "${sr}/lib64/ld-linux-x86-64.so.2"
+  else
+    echo "sysroot missing ld-linux-x86-64.so.2 (libc6)" >&2
+    exit 1
+  fi
+
+  # libgcc-s1 ships libgcc_s.so.1 only; --unwindlib=libgcc needs -lgcc_s.
+  if [[ -e "${sr}/lib/x86_64-linux-gnu/libgcc_s.so.1" ]]; then
+    ln -sfn libgcc_s.so.1 "${sr}/lib/x86_64-linux-gnu/libgcc_s.so"
+  else
+    echo "sysroot missing libgcc_s.so.1 (libgcc-s1)" >&2
+    exit 1
+  fi
+
+  # Mirror zlib into deps/ so find_package(ZLIB) / ZLIB_ROOT works without
+  # FetchContent (matches Windows pack layout).
+  mkdir -p "${stage}/deps/include" "${stage}/deps/lib"
+  if [[ -f "${sr}/usr/include/zlib.h" ]]; then
+    cp -a "${sr}/usr/include/zlib.h" "${stage}/deps/include/"
+    # zconf.h is multiarch on Ubuntu (usr/include/<triplet>/zconf.h).
+    if [[ -f "${sr}/usr/include/zconf.h" ]]; then
+      cp -a "${sr}/usr/include/zconf.h" "${stage}/deps/include/"
+    else
+      local zconf
+      zconf="$(find "${sr}/usr/include" -name 'zconf.h' | head -1 || true)"
+      if [[ -n "$zconf" ]]; then
+        cp -a "$zconf" "${stage}/deps/include/zconf.h"
+      fi
+    fi
+  fi
+  local zlib_a
+  zlib_a="$(find "${sr}/usr/lib" -name 'libz.a' | head -1 || true)"
+  if [[ -n "$zlib_a" ]]; then
+    cp -a "$zlib_a" "${stage}/deps/lib/libz.a"
+  fi
+  [[ -f "${stage}/deps/include/zlib.h" && -f "${stage}/deps/lib/libz.a" ]] || {
+    echo "failed to stage zlib into deps/ from sysroot debs" >&2
+    exit 1
+  }
+
+  # Drop bulky non-link/compile bits from -dev packages (keep lean).
+  rm -rf "${sr}/usr/share/doc" "${sr}/usr/share/man" "${sr}/usr/share/lintian" \
+    "${sr}/usr/share/gcc" "${sr}/usr/lib/gcc"/*/*-linux-gnu/*/include-fixed \
+    2>/dev/null || true
+  # Keep gcc/*/crt*.o if any slipped in under lib/gcc — usually Scrt1 is enough
+  # with compiler-rt, but libstdc++.so linker scripts may reference gcc paths.
+  echo "staged Linux sysroot → ${sr} (+ zlib → deps/)"
+}
+
+# Rewrite clang.cfg after sysroot is present. <CFGDIR> is the directory that
+# contains the config file (clang's bin/), so ../sysroot is pack-relative.
+write_linux_clang_cfg() {
+  local stage="$1"
+  local with_sysroot="${2:-0}"
+  {
+    printf '%s\n' '-fuse-ld=lld'
+    printf '%s\n' '--rtlib=compiler-rt'
+    if [[ "$with_sysroot" == "1" ]]; then
+      # Relative to bin/; absolute via Clang <CFGDIR> expansion.
+      printf '%s\n' '--sysroot=<CFGDIR>/../sysroot'
+      # Prefer the jammy multiarch triple inside the sysroot.
+      printf '%s\n' '--target=x86_64-unknown-linux-gnu'
+      # Without a host GCC install, clang will not auto-discover libstdc++.
+      # Point at the versioned jammy paths staged under sysroot/.
+      local cxx_ver gcc_lib
+      cxx_ver="$(basename "$(find "${stage}/sysroot/usr/include/c++" -mindepth 1 -maxdepth 1 -type d | head -1)")"
+      gcc_lib="$(find "${stage}/sysroot/usr/lib/gcc/x86_64-linux-gnu" -mindepth 1 -maxdepth 1 -type d | head -1 || true)"
+      if [[ -z "$cxx_ver" || ! -f "${stage}/sysroot/usr/include/c++/${cxx_ver}/string" ]]; then
+        echo "write_linux_clang_cfg: libstdc++ headers missing under sysroot" >&2
+        exit 1
+      fi
+      if [[ -z "$gcc_lib" || ! -e "${gcc_lib}/libstdc++.so" ]]; then
+        echo "write_linux_clang_cfg: libstdc++.so missing under sysroot usr/lib/gcc" >&2
+        exit 1
+      fi
+      printf '%s\n' "--unwindlib=libgcc"
+      printf '%s\n' "-isystem<CFGDIR>/../sysroot/usr/include/c++/${cxx_ver}"
+      printf '%s\n' "-isystem<CFGDIR>/../sysroot/usr/include/x86_64-linux-gnu/c++/${cxx_ver}"
+      printf '%s\n' "-L<CFGDIR>/../sysroot/usr/lib/gcc/x86_64-linux-gnu/$(basename "$gcc_lib")"
+    fi
+  } >"${stage}/bin/clang.cfg"
+  cp -a "${stage}/bin/clang.cfg" "${stage}/bin/clang++.cfg"
+}
+
 # Native-build static SDL3 into a Linux clang stage (needs host X11/ALSA headers).
 stage_sdl3_linux() {
   local stage_in="$1"

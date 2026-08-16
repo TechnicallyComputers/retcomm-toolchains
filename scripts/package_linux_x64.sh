@@ -11,6 +11,10 @@ need tar
 need zip
 need file
 need ar
+# Some jammy security debs ship data.tar.zst.
+if ! tar --help 2>&1 | grep -q zstd; then
+  need zstd
+fi
 
 OUT="${1:-$OUT_DEFAULT}"
 OS_TAG="linux-x64"
@@ -123,20 +127,18 @@ else
   echo "warning: patchelf not found; relying on LD_LIBRARY_PATH for bundled libs" >&2
 fi
 
-# Default to lld so Release IPO (-flto=thin) does not require LLVMgold.so + system ld.
-# Prefer compiler-rt over host GCC CRT/libgcc so cmake links on SteamOS / hosts
-# without a GCC install (still uses host glibc Scrt1/crti + libstdc++ for C++).
-{
-  printf '%s\n' '-fuse-ld=lld'
-  printf '%s\n' '--rtlib=compiler-rt'
-} >"${STAGE}/bin/clang.cfg"
-cp -a "${STAGE}/bin/clang.cfg" "${STAGE}/bin/clang++.cfg"
+# Default to lld + compiler-rt. Sysroot is added AFTER SDL3 build — the packager
+# host needs its own X11/ALSA headers to compile SDL3; SteamOS consumers get
+# --sysroot from the final clang.cfg.
+write_linux_clang_cfg "$STAGE" 0
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
 stage_ccache "$CCACHE_ARC" "$STAGE" ccache tar.xz
 stage_sdl3_linux "$STAGE"
 stage_python_standalone "$STAGE" "x86_64-unknown-linux-gnu"
+stage_linux_sysroot "$STAGE"
+write_linux_clang_cfg "$STAGE" 1
 
 cat >"${STAGE}/env.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -155,7 +157,7 @@ export CXX="${PACK_ROOT}/bin/clang++"
 export AR="${PACK_ROOT}/bin/llvm-ar"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib"
 # Bundled libxml2.so.2 + libicuuc/libicudata .70 for lld;
-# clang.cfg → -fuse-ld=lld --rtlib=compiler-rt.
+# clang.cfg → -fuse-ld=lld --rtlib=compiler-rt --sysroot=<pack>/sysroot.
 case ":${LD_LIBRARY_PATH:-}:" in
   *":${PACK_ROOT}/lib:"*) ;;
   *) export LD_LIBRARY_PATH="${PACK_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
@@ -170,9 +172,15 @@ case " ${LDFLAGS:-} " in
 esac
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
+if [[ -d "${PACK_ROOT}/sysroot/usr/include" ]]; then
+  export CMAKE_SYSROOT="${PACK_ROOT}/sysroot"
+fi
 if [[ -f "${PACK_ROOT}/deps/lib/cmake/SDL3/SDL3Config.cmake" ||
       -f "${PACK_ROOT}/deps/lib/cmake/SDL3/SDL3-config.cmake" ]]; then
   export SDL3_DIR="${PACK_ROOT}/deps/lib/cmake/SDL3"
+fi
+if [[ -f "${PACK_ROOT}/deps/include/zlib.h" ]]; then
+  export ZLIB_ROOT="${PACK_ROOT}/deps"
 fi
 EOF
 chmod +x "${STAGE}/env.sh"
@@ -185,12 +193,14 @@ Portable RetComM / psxrecomp toolchain pack:
 - LLVM/Clang ${LLVM_VERSION} + lld (pruned official Linux-X64 build)
 - Bundled \`libxml2.so.2\` + \`libicuuc.so.70\` / \`libicudata.so.70\` (Ubuntu jammy)
   so lld runs on hosts that only ship newer SONAMEs (e.g. ICU 78)
-- \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld --rtlib=compiler-rt\`
-  (Release LTO / IPO without LLVMgold; no host GCC \`crtbeginS.o\` / \`-lgcc\`)
+- \`clang.cfg\` / \`clang++.cfg\` → \`-fuse-ld=lld --rtlib=compiler-rt
+  --sysroot=<CFGDIR>/../sysroot\` (no host GCC; SteamOS / Deck OK)
+- Ubuntu jammy **build sysroot** under \`sysroot/\` (glibc + linux-api +
+  libstdc++ + OpenGL headers and linker stubs)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
 - ccache ${CCACHE_VERSION} (compiler cache; speeds cold/rebuild after path moves)
-- SDL3 ${SDL3_VERSION} under \`deps/\` (static \`libSDL3.a\` + CMake CONFIG)
+- SDL3 ${SDL3_VERSION} + zlib under \`deps/\` (static libs + CMake CONFIG)
 - CPython ${PYTHON_VERSION} (python-build-standalone; no system Python required)
 
 ## Install (recommended)
@@ -221,16 +231,16 @@ clang --version
 RetComM / title wizards also find the pack under
 \`~/.local/share/retcomm/toolchains/${PACK_ID}/\` after \`./install.sh\`.
 
-Uses the host glibc (and host libstdc++ for C++). Does **not** need a host GCC
-install for C links — compiler-rt supplies CRT/builtins (SteamOS / Deck OK).
-C++ still needs host libstdc++ headers + \`libstdc++.so\` (often \`gcc-libs\` /
-\`libstdc++\` packages). Requires a reasonably modern x86_64 glibc
-(Ubuntu 22.04+ / similar).
+**SteamOS / Deck:** do **not** unlock \`steamos-readonly\` or install
+\`base-devel\`. This pack compiles and links against the bundled jammy
+sysroot; the finished binary still loads the Deck's runtime \`libc\` /
+\`libGL\` via normal dynamic linking. Requires a reasonably modern host
+glibc at **runtime** (Ubuntu 22.04+ / SteamOS 3.x).
 
 Pack version: ${PACK_VERSION}
 EOF
 
-write_meta "$STAGE" "$OS_TAG" "llvm-clang-lld"
+write_meta "$STAGE" "$OS_TAG" "llvm-clang-lld-sysroot"
 stage_bundle_scripts "$STAGE" unix
 
 # Smoke (including thin LTO — the MotK Release IPO path)
@@ -241,6 +251,10 @@ stage_bundle_scripts "$STAGE" unix
 [[ -f "${STAGE}/deps/lib/cmake/SDL3/SDL3Config.cmake" ]] || \
   [[ -f "${STAGE}/deps/lib/cmake/SDL3/SDL3-config.cmake" ]]
 [[ -d "${STAGE}/deps/include/SDL3" ]]
+[[ -f "${STAGE}/deps/include/zlib.h" ]]
+[[ -f "${STAGE}/deps/lib/libz.a" ]]
+[[ -f "${STAGE}/sysroot/usr/include/unistd.h" || -f "${STAGE}/sysroot/usr/include/x86_64-linux-gnu/unistd.h" ]]
+[[ -f "${STAGE}/sysroot/usr/include/GL/gl.h" ]]
 export PATH="${STAGE}/bin:${PATH}"
 # Prove RUNPATH/$ORIGIN without ambient LD_LIBRARY_PATH (wizard often only
 # prepends bin/ to PATH; env.sh still sets LD_LIBRARY_PATH as a belt).
@@ -285,10 +299,36 @@ echo "$SMOKE_DRIVE" | grep -q 'clang_rt.crtbegin' || {
   echo "$SMOKE_DRIVE" >&2
   exit 1
 }
+echo "$SMOKE_DRIVE" | grep -q 'sysroot' || {
+  echo "expected --sysroot in driver dump" >&2
+  echo "$SMOKE_DRIVE" >&2
+  exit 1
+}
 "${STAGE}/bin/clang" --gcc-toolchain=/nonexistent "${STAGE}/.smoke.c" -o "${STAGE}/.smoke"
 "${STAGE}/.smoke"
+# Headers must resolve from the pack sysroot (unistd + GL).
+cat >"${STAGE}/.smoke_sys.c" <<'SMOKE_SYS'
+#include <unistd.h>
+#include <sys/types.h>
+#include <GL/gl.h>
+int main(void) { (void)sizeof(pid_t); return 0; }
+SMOKE_SYS
+"${STAGE}/bin/clang" --gcc-toolchain=/nonexistent "${STAGE}/.smoke_sys.c" -lGL \
+  -o "${STAGE}/.smoke_sys"
+"${STAGE}/.smoke_sys"
+# C++ libstdc++ from sysroot
+cat >"${STAGE}/.smoke_sys.cpp" <<'SMOKE_CXX'
+#include <string>
+#include <iostream>
+int main() { std::string s = "ok"; return s.empty() ? 1 : 0; }
+SMOKE_CXX
+"${STAGE}/bin/clang++" --gcc-toolchain=/nonexistent "${STAGE}/.smoke_sys.cpp" \
+  -o "${STAGE}/.smoke_sysxx"
+"${STAGE}/.smoke_sysxx"
 "${STAGE}/bin/clang" "${STAGE}/.smoke.c" -flto=thin -O2 -o "${STAGE}/.smoke_lto"
 "${STAGE}/.smoke_lto"
-rm -f "${STAGE}/.smoke" "${STAGE}/.smoke_lto" "${STAGE}/.smoke.c"
+rm -f "${STAGE}/.smoke" "${STAGE}/.smoke_lto" "${STAGE}/.smoke.c" \
+  "${STAGE}/.smoke_sys" "${STAGE}/.smoke_sys.c" \
+  "${STAGE}/.smoke_sysxx" "${STAGE}/.smoke_sys.cpp"
 
 make_zip "$STAGE" "$ZIP"
