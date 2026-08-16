@@ -118,7 +118,7 @@ not in per-game `game.toml`.
 
 | Asset | Contents |
 |-------|----------|
-| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld`, CMake, Ninja, ccache, static SDL3, embeddable CPython |
+| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld --rtlib=compiler-rt`, CMake, Ninja, ccache, static SDL3, embeddable CPython |
 | `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + ccache + static zlib + static SDL3 + embeddable CPython |
 | `cmake-clang-v1-macos-universal.zip` | CMake + Ninja + ccache + embeddable CPython (arm64+x64); **requires Xcode CLT** (system clang); SDL3 via FetchContent / system |
 
@@ -167,9 +167,16 @@ Point title `build.toolchain` at this repo:
 ```
 
 Omit `min_version` when any cached usable pack is fine. Raise it when a title
-needs a newer dependency (e.g. `deps/` layout in `1.0.9+`, prebuilt SDL3 in
+needs a newer dependency (e.g. Linux `--rtlib=compiler-rt` / no host GCC CRT in
+`1.0.11+`, `deps/` layout in `1.0.9+`, prebuilt SDL3 in
 `1.0.7+`, embeddable Python in `1.0.6+`, Linux ICU 70 in `1.0.5+`,
 LTO/`libxml2` in `1.0.4+`, Windows zlib in `1.0.3+`).
+
+**1.0.11+** (Linux): `clang.cfg` adds `--rtlib=compiler-rt` so links use the
+pack’s `clang_rt.crtbegin` / `libclang_rt.builtins` instead of host GCC
+`crtbeginS.o` / `-lgcc`. Fixes cmake configure on SteamOS / Deck and other
+hosts without `gcc` / `base-devel`. C++ still needs host **libstdc++**
+(headers + shared lib).
 
 **1.0.9+** installs zlib + SDL3 under **`deps/`** so `find_package` never
 `-isystem`s the Windows llvm-mingw top-level `include/` (which poisons libc++

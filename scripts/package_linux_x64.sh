@@ -124,8 +124,13 @@ else
 fi
 
 # Default to lld so Release IPO (-flto=thin) does not require LLVMgold.so + system ld.
-printf '%s\n' '-fuse-ld=lld' >"${STAGE}/bin/clang.cfg"
-printf '%s\n' '-fuse-ld=lld' >"${STAGE}/bin/clang++.cfg"
+# Prefer compiler-rt over host GCC CRT/libgcc so cmake links on SteamOS / hosts
+# without a GCC install (still uses host glibc Scrt1/crti + libstdc++ for C++).
+{
+  printf '%s\n' '-fuse-ld=lld'
+  printf '%s\n' '--rtlib=compiler-rt'
+} >"${STAGE}/bin/clang.cfg"
+cp -a "${STAGE}/bin/clang.cfg" "${STAGE}/bin/clang++.cfg"
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
@@ -149,7 +154,8 @@ export CC="${PACK_ROOT}/bin/clang"
 export CXX="${PACK_ROOT}/bin/clang++"
 export AR="${PACK_ROOT}/bin/llvm-ar"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib"
-# Bundled libxml2.so.2 + libicuuc/libicudata .70 for lld; clang.cfg → -fuse-ld=lld.
+# Bundled libxml2.so.2 + libicuuc/libicudata .70 for lld;
+# clang.cfg → -fuse-ld=lld --rtlib=compiler-rt.
 case ":${LD_LIBRARY_PATH:-}:" in
   *":${PACK_ROOT}/lib:"*) ;;
   *) export LD_LIBRARY_PATH="${PACK_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ;;
@@ -157,6 +163,10 @@ esac
 case " ${LDFLAGS:-} " in
   *" -fuse-ld=lld "*|*" -fuse-ld=lld") ;;
   *) export LDFLAGS="-fuse-ld=lld${LDFLAGS:+ ${LDFLAGS}}" ;;
+esac
+case " ${LDFLAGS:-} " in
+  *" --rtlib=compiler-rt "*|*" --rtlib=compiler-rt") ;;
+  *) export LDFLAGS="${LDFLAGS:+${LDFLAGS} }--rtlib=compiler-rt" ;;
 esac
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
@@ -175,7 +185,8 @@ Portable RetComM / psxrecomp toolchain pack:
 - LLVM/Clang ${LLVM_VERSION} + lld (pruned official Linux-X64 build)
 - Bundled \`libxml2.so.2\` + \`libicuuc.so.70\` / \`libicudata.so.70\` (Ubuntu jammy)
   so lld runs on hosts that only ship newer SONAMEs (e.g. ICU 78)
-- \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld\` (Release LTO / IPO without LLVMgold)
+- \`clang.cfg\` / \`clang++.cfg\` default to \`-fuse-ld=lld --rtlib=compiler-rt\`
+  (Release LTO / IPO without LLVMgold; no host GCC \`crtbeginS.o\` / \`-lgcc\`)
 - CMake ${CMAKE_VERSION}
 - Ninja ${NINJA_VERSION}
 - ccache ${CCACHE_VERSION} (compiler cache; speeds cold/rebuild after path moves)
@@ -210,8 +221,11 @@ clang --version
 RetComM / title wizards also find the pack under
 \`~/.local/share/retcomm/toolchains/${PACK_ID}/\` after \`./install.sh\`.
 
-Uses the host glibc / libstdc++ (typical for Linux portable clang). Requires a
-reasonably modern x86_64 glibc (Ubuntu 22.04+ / similar).
+Uses the host glibc (and host libstdc++ for C++). Does **not** need a host GCC
+install for C links — compiler-rt supplies CRT/builtins (SteamOS / Deck OK).
+C++ still needs host libstdc++ headers + \`libstdc++.so\` (often \`gcc-libs\` /
+\`libstdc++\` packages). Requires a reasonably modern x86_64 glibc
+(Ubuntu 22.04+ / similar).
 
 Pack version: ${PACK_VERSION}
 EOF
@@ -256,8 +270,22 @@ case "$XML_ICU_ABS" in
     ;;
 esac
 echo "libxml2 → libicuuc.so.70 → ${XML_ICU_ABS}"
-echo 'int main(){return 0;}' >"${STAGE}/.smoke.c"
-"${STAGE}/bin/clang" "${STAGE}/.smoke.c" -o "${STAGE}/.smoke"
+echo 'int main(void){return 0;}' >"${STAGE}/.smoke.c"
+# SteamOS / no-GCC host: must not request bare crtbeginS.o or -lgcc.
+SMOKE_DRIVE="$("${STAGE}/bin/clang" -### --gcc-toolchain=/nonexistent \
+  "${STAGE}/.smoke.c" -o "${STAGE}/.smoke" 2>&1)" || true
+# Driver dumps tokens as "-lgcc" / "crtbeginS.o" (quoted).
+if echo "$SMOKE_DRIVE" | grep -E 'crtbeginS\.o|"-lgcc"' >/dev/null; then
+  echo "clang still depends on host GCC CRT/libgcc (SteamOS would fail cmake):" >&2
+  echo "$SMOKE_DRIVE" >&2
+  exit 1
+fi
+echo "$SMOKE_DRIVE" | grep -q 'clang_rt.crtbegin' || {
+  echo "expected clang_rt.crtbegin in link line (compiler-rt)" >&2
+  echo "$SMOKE_DRIVE" >&2
+  exit 1
+}
+"${STAGE}/bin/clang" --gcc-toolchain=/nonexistent "${STAGE}/.smoke.c" -o "${STAGE}/.smoke"
 "${STAGE}/.smoke"
 "${STAGE}/bin/clang" "${STAGE}/.smoke.c" -flto=thin -O2 -o "${STAGE}/.smoke_lto"
 "${STAGE}/.smoke_lto"
