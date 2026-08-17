@@ -172,6 +172,8 @@ case " ${LDFLAGS:-} " in
 esac
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/bin/python3"
+unset PYTHONHOME PYTHONPATH 2>/dev/null || true
+export PYTHONNOUSERSITE=1
 if [[ -d "${PACK_ROOT}/sysroot/usr/include" ]]; then
   export CMAKE_SYSROOT="${PACK_ROOT}/sysroot"
 fi

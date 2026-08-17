@@ -91,6 +91,11 @@ stage_python_standalone() {
   rm -rf "$tmp"
 
   if [[ -f "${dest}/python.exe" ]]; then
+    # Windows PBS: urllib → _socket.pyd under DLLs/ (launcher generate + toolchain_pack).
+    [[ -f "${dest}/DLLs/_socket.pyd" ]] || {
+      echo "missing DLLs/_socket.pyd under ${dest}" >&2
+      exit 1
+    }
     echo "staged CPython ${py_ver} → ${dest}/python.exe"
   elif [[ -x "${dest}/bin/python3" || -x "${dest}/bin/python" ]]; then
     chmod +x "${dest}/bin/python3" "${dest}/bin/python" 2>/dev/null || true

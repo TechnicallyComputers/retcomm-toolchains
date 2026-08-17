@@ -55,6 +55,15 @@ stage_zlib_mingw_windows "$STAGE"
 stage_sdl3_mingw_windows "$STAGE"
 stage_python_standalone "$STAGE" "x86_64-pc-windows-msvc"
 
+# llvm-mingw occasionally ships libpython*.dll in bin/. That must not sit on PATH
+# ahead of python-build-standalone's own python3XX.dll / extension modules.
+rm -f "${STAGE}/bin"/libpython*.dll "${STAGE}/bin"/libpython*.dll.a 2>/dev/null || true
+# Structure: PBS Windows layout needs _socket.pyd for urllib (codegen / toolchain_pack).
+[[ -f "${STAGE}/python/DLLs/_socket.pyd" ]] || {
+  echo "missing python/DLLs/_socket.pyd in staged CPython" >&2
+  exit 1
+}
+
 cat >"${STAGE}/env.bat" <<'EOF'
 @echo off
 set "PACK_ROOT=%~dp0"
@@ -69,6 +78,10 @@ set "AR=%PACK_ROOT%\bin\llvm-ar.exe"
 set "RANLIB=%PACK_ROOT%\bin\llvm-ranlib.exe"
 set "RETCOMM_TOOLCHAIN_DIR=%PACK_ROOT%"
 set "RETCOMM_PYTHON=%PACK_ROOT%\python\python.exe"
+rem Isolate pack Python from any host PYTHONHOME/PYTHONPATH.
+set "PYTHONHOME="
+set "PYTHONPATH="
+set "PYTHONNOUSERSITE=1"
 rem Host deps live under deps/ — never ZLIB_ROOT/CMAKE_PREFIX_PATH=PACK_ROOT
 rem (mingw include/math.h poisons libc++).
 if exist "%PACK_ROOT%\deps\include\zlib.h" (
@@ -99,6 +112,9 @@ export AR="${PACK_ROOT}/bin/llvm-ar.exe"
 export RANLIB="${PACK_ROOT}/bin/llvm-ranlib.exe"
 export RETCOMM_TOOLCHAIN_DIR="${PACK_ROOT}"
 export RETCOMM_PYTHON="${PACK_ROOT}/python/python.exe"
+# Isolate pack Python from any host PYTHONHOME/PYTHONPATH.
+unset PYTHONHOME PYTHONPATH 2>/dev/null || true
+export PYTHONNOUSERSITE=1
 # deps/ only — never pack root on CMAKE_PREFIX_PATH / ZLIB_ROOT (libc++ clash).
 if [[ -f "${PACK_ROOT}/deps/include/zlib.h" ]]; then
   export ZLIB_ROOT="${PACK_ROOT}/deps"
@@ -176,6 +192,15 @@ stage_bundle_scripts "$STAGE" windows
   [[ -f "${STAGE}/deps/lib/cmake/SDL3/SDL3-config.cmake" ]]
 [[ -d "${STAGE}/deps/include/SDL3" ]]
 [[ -f "${STAGE}/python/python.exe" ]]
+[[ -f "${STAGE}/python/DLLs/_socket.pyd" ]]
+# Hygiene: no mingw libpython on bin/ (would shadow PBS).
+shopt -s nullglob
+libpy=("${STAGE}/bin"/libpython*.dll)
+shopt -u nullglob
+[[ ${#libpy[@]} -eq 0 ]] || {
+  echo "libpython*.dll still present under bin/: ${libpy[*]}" >&2
+  exit 1
+}
 [[ -f "${STAGE}/install.ps1" ]]
 [[ -f "${STAGE}/uninstall.ps1" ]]
 [[ -f "${STAGE}/install.bat" ]]
