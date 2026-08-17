@@ -672,6 +672,11 @@ write_linux_clang_cfg() {
 }
 
 # Native-build static SDL3 into a Linux clang stage (needs host X11/ALSA headers).
+#
+# MUST run with clang.cfg that does NOT yet force --sysroot, on a host whose
+# glibc matches the jammy build sysroot (2.35). Packaging CI uses ubuntu-22.04
+# for that reason: building SDL3 on ubuntu-24.04 embeds __isoc23_* / strlcpy
+# refs that jammy (and SteamOS link sysroot) cannot resolve.
 stage_sdl3_linux() {
   local stage_in="$1"
   local stage
@@ -691,6 +696,24 @@ stage_sdl3_linux() {
     echo "stage_sdl3_linux: stage clang missing ($cc)" >&2
     exit 1
   }
+
+  # Guard: host glibc must be ≤ jammy (2.35). Newer hosts produce an SDL3.a
+  # that fails to link against pack sysroot/libc (Debian/SteamOS symptom:
+  # undefined __isoc23_strtol / strlcpy / wcslcpy).
+  local host_glibc=""
+  if host_glibc="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | tail -1)"; then
+    local major minor
+    major="${host_glibc%%.*}"
+    minor="${host_glibc#*.}"
+    minor="${minor%%.*}"
+    if [[ "$major" -gt 2 || ( "$major" -eq 2 && "$minor" -gt 35 ) ]]; then
+      echo "stage_sdl3_linux: host glibc ${host_glibc} is newer than jammy 2.35." >&2
+      echo "  Build the Linux pack on ubuntu-22.04 (or equal) so deps/libSDL3.a" >&2
+      echo "  matches the bundled jammy sysroot (SteamOS / Debian / Deck)." >&2
+      exit 1
+    fi
+  fi
+
   download "$sdl_url" "$sdl_arc"
   _verify_sdl3_sha256 "$sdl_arc"
 
@@ -707,7 +730,7 @@ stage_sdl3_linux() {
 
   local sbuild="${stmp}/build-linux"
   mkdir -p "$sbuild"
-  echo "building SDL3 ${sdl_ver} (static, pack clang)…"
+  echo "building SDL3 ${sdl_ver} (static, pack clang, jammy-compatible glibc)…"
   # Absolute compiler paths required — CMake rejects relative CMAKE_C_COMPILER
   # when the tool is not already on PATH (CI pack stages are relative).
   if ! cmake -S "$ssrc" -B "$sbuild" -G Ninja \
@@ -743,6 +766,36 @@ stage_sdl3_linux() {
     exit 1
   fi
   echo "staged SDL3 ${sdl_ver} -> deps/{include/SDL3,lib/libSDL3.a,lib/cmake/SDL3}"
+}
+
+# Fail the pack if libSDL3.a still references glibc symbols the jammy sysroot
+# cannot provide (noble/24.04 build leak).
+assert_sdl3_jammy_linkable() {
+  local stage="$1"
+  local lib="${stage}/deps/lib/libSDL3.a"
+  local nm_bin="${stage}/bin/llvm-nm"
+  [[ -f "$lib" ]] || {
+    echo "assert_sdl3_jammy_linkable: missing $lib" >&2
+    exit 1
+  }
+  [[ -x "$nm_bin" ]] || nm_bin="nm"
+  local undef
+  undef="$("$nm_bin" -u "$lib" 2>/dev/null | awk '{print $NF}' | sort -u || true)"
+  local bad=""
+  local sym
+  for sym in __isoc23_strtol __isoc23_strtoul __isoc23_strtoll __isoc23_strtoull \
+    __isoc23_sscanf __isoc23_vsscanf __isoc23_fscanf __isoc23_wcstol \
+    strlcpy strlcat wcslcpy wcslcat; do
+    if printf '%s\n' "$undef" | grep -qx "$sym"; then
+      bad+=" $sym"
+    fi
+  done
+  if [[ -n "$bad" ]]; then
+    echo "libSDL3.a has undefined symbols the jammy sysroot lacks:${bad}" >&2
+    echo "  Rebuild the Linux pack on ubuntu-22.04 (glibc 2.35)." >&2
+    exit 1
+  fi
+  echo "libSDL3.a jammy-link smoke OK (no __isoc23_* / strlcpy / wcslcpy undefs)"
 }
 
 # Copy self-install / uninstall helpers into the pack stage (zip root).

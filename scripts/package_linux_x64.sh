@@ -127,15 +127,16 @@ else
   echo "warning: patchelf not found; relying on LD_LIBRARY_PATH for bundled libs" >&2
 fi
 
-# Default to lld + compiler-rt. Sysroot is added AFTER SDL3 build — the packager
-# host needs its own X11/ALSA headers to compile SDL3; SteamOS consumers get
-# --sysroot from the final clang.cfg.
+# Default to lld + compiler-rt only while building SDL3: packager host needs its
+# own X11/ALSA headers, and host glibc must match jammy (CI = ubuntu-22.04).
+# SteamOS consumers get --sysroot from the final clang.cfg after SDL3 is staged.
 write_linux_clang_cfg "$STAGE" 0
 
 stage_cmake_from_archive "$CMAKE_ARC" "$STAGE" linux
 stage_ninja "$NINJA_ARC" "$STAGE" ninja
 stage_ccache "$CCACHE_ARC" "$STAGE" ccache tar.xz
 stage_sdl3_linux "$STAGE"
+assert_sdl3_jammy_linkable "$STAGE"
 stage_python_standalone "$STAGE" "x86_64-unknown-linux-gnu"
 stage_linux_sysroot "$STAGE"
 write_linux_clang_cfg "$STAGE" 1
@@ -239,6 +240,10 @@ sysroot; the finished binary still loads the Deck's runtime \`libc\` /
 \`libGL\` via normal dynamic linking. Requires a reasonably modern host
 glibc at **runtime** (Ubuntu 22.04+ / SteamOS 3.x).
 
+**Packager hosts:** Linux zips must be assembled on **ubuntu-22.04** (glibc
+2.35) so \`deps/libSDL3.a\` matches the jammy sysroot. Building SDL3 on
+24.04+ embeds \`__isoc23_*\` / \`strlcpy\` and breaks Debian / SteamOS links.
+
 Pack version: ${PACK_VERSION}
 EOF
 
@@ -257,6 +262,7 @@ stage_bundle_scripts "$STAGE" unix
 [[ -f "${STAGE}/deps/lib/libz.a" ]]
 [[ -f "${STAGE}/sysroot/usr/include/unistd.h" || -f "${STAGE}/sysroot/usr/include/x86_64-linux-gnu/unistd.h" ]]
 [[ -f "${STAGE}/sysroot/usr/include/GL/gl.h" ]]
+assert_sdl3_jammy_linkable "$STAGE"
 export PATH="${STAGE}/bin:${PATH}"
 # Prove RUNPATH/$ORIGIN without ambient LD_LIBRARY_PATH (wizard often only
 # prepends bin/ to PATH; env.sh still sets LD_LIBRARY_PATH as a belt).

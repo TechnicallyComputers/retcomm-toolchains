@@ -22,7 +22,10 @@ concurrency:
 jobs:
   package:
     name: Assemble packs (ubuntu)
-    runs-on: ubuntu-24.04
+    # Linux SDL3 must be compiled against glibc ≤ jammy (2.35): the shipped
+    # sysroot is jammy (SteamOS / Deck / Debian). ubuntu-24.04 embeds
+    # __isoc23_* / strlcpy into libSDL3.a and breaks consumer links.
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,7 +66,7 @@ jobs:
     name: GitHub Release
     needs: package
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4

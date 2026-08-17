@@ -122,7 +122,7 @@ not in per-game `game.toml`.
 
 | Asset | Contents |
 |-------|----------|
-| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, jammy **build sysroot**, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld --rtlib=compiler-rt --sysroot=…`, CMake, Ninja, ccache, static SDL3 + zlib, embeddable CPython |
+| `cmake-clang-v1-linux-x64.zip` | Pruned LLVM/Clang + lld, jammy **build sysroot**, bundled `libxml2.so.2` + ICU 70, `clang.cfg` → `-fuse-ld=lld --rtlib=compiler-rt --sysroot=…`, CMake, Ninja, ccache, static SDL3 (built on jammy-compatible glibc) + zlib, embeddable CPython |
 | `cmake-clang-v1-windows-x64.zip` | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) UCRT + CMake + Ninja + ccache + static zlib + static SDL3 + embeddable CPython |
 | `cmake-clang-v1-macos-universal.zip` | CMake + Ninja + ccache + embeddable CPython (arm64+x64); **requires Xcode CLT** (system clang); SDL3 via FetchContent / system |
 
@@ -171,11 +171,18 @@ Point title `build.toolchain` at this repo:
 ```
 
 Omit `min_version` when any cached usable pack is fine. Raise it when a title
-needs a newer dependency (e.g. Linux jammy **build sysroot** / SteamOS-ready in
+needs a newer dependency (e.g. Linux jammy-compatible **SDL3** in `1.0.14+`,
+Linux jammy **build sysroot** / SteamOS-ready in
 `1.0.12+`, Linux `--rtlib=compiler-rt` / no host GCC CRT in
 `1.0.11+`, `deps/` layout in `1.0.9+`, prebuilt SDL3 in
 `1.0.7+`, embeddable Python in `1.0.6+`, Linux ICU 70 in `1.0.5+`,
 LTO/`libxml2` in `1.0.4+`, Windows zlib in `1.0.3+`).
+
+**1.0.14+** (Linux): assemble packs on **ubuntu-22.04** so prebuilt
+`deps/libSDL3.a` matches the jammy sysroot glibc (2.35). 1.0.12–1.0.13 built
+SDL3 on ubuntu-24.04 and embedded `__isoc23_*` / `strlcpy` / `wcslcpy`, which
+fail to link on Debian and SteamOS against the jammy sysroot. Packaging smoke
+rejects those undefs; SteamOS still uses the same jammy `--sysroot` (unchanged).
 
 **1.0.12+** (Linux): ships an Ubuntu jammy amd64 **build sysroot** under
 `sysroot/` (glibc + linux-api + libstdc++ + OpenGL headers and linker stubs).
