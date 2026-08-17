@@ -1,5 +1,9 @@
 # retcomm-toolchains
 
+[![GitHub downloads (all assets, all releases)](https://img.shields.io/github/downloads/TechnicallyComputers/RetComM-toolchains/total)](https://github.com/TechnicallyComputers/RetComM-toolchains/releases)
+[![GitHub downloads (latest release)](https://img.shields.io/github/downloads/TechnicallyComputers/RetComM-toolchains/latest/total)](https://github.com/TechnicallyComputers/RetComM-toolchains/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/TechnicallyComputers/RetComM-toolchains)](https://github.com/TechnicallyComputers/RetComM-toolchains/releases/latest)
+
 Shared, fetch-on-demand toolchain packs for
 [RetComM](https://github.com/TechnicallyComputers/RetComM-Launcher) and
 standalone recomp setup hosts (psxrecomp / snesrecomp / …).
